@@ -1,0 +1,1587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Container Packing Calculator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#c9d1d9;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Lock screen ── */
+#lockScreen{position:fixed;inset:0;z-index:9999;background:radial-gradient(ellipse at 50% 40%,#0f1c2e 0%,#060c14 100%);display:flex;align-items:center;justify-content:center}
+.lock-wrap{text-align:center;width:100%;max-width:420px;padding:0 20px}
+.lock-icon{font-size:3.5rem;margin-bottom:10px;filter:drop-shadow(0 0 20px rgba(56,139,253,.5))}
+.lock-title{font-size:1.6rem;font-weight:700;color:#f0f6fc;margin-bottom:4px}
+.lock-sub{font-size:0.82rem;color:#8b949e;margin-bottom:28px}
+.lock-card{background:#161b22;border:1px solid #30363d;border-radius:14px;padding:28px;box-shadow:0 8px 40px rgba(0,0,0,.6)}
+.lock-card label{display:block;font-size:0.78rem;color:#8b949e;margin-bottom:6px;text-align:left}
+#keyInput{width:100%;padding:12px 14px;background:#0d1117;border:1px solid #30363d;border-radius:8px;color:#f0f6fc;font-size:1.05rem;font-family:'Courier New',monospace;letter-spacing:.12em;outline:none;transition:border-color .15s;text-align:center}
+#keyInput:focus{border-color:#388bfd}
+#keyInput.err-inp{border-color:#f85149;animation:shake .3s}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.lock-btn{width:100%;padding:12px;background:linear-gradient(135deg,#1f6feb,#388bfd);border:none;border-radius:8px;color:#fff;font-size:1rem;font-weight:600;cursor:pointer;margin-top:14px;transition:opacity .15s}
+.lock-btn:hover{opacity:.88}
+#lockMsg{margin-top:10px;font-size:0.78rem;min-height:20px;transition:color .15s}
+#lockMsg.ok{color:#3fb950}#lockMsg.bad{color:#f85149}#lockMsg.warn{color:#f0883e}
+.lock-contact{margin-top:20px;font-size:0.73rem;color:#484f58}
+.lock-contact a{color:#58a6ff;text-decoration:none}
+
+/* ── Admin panel ── */
+#adminPanel{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center}
+.admin-card{background:#161b22;border:1px solid #f0883e;border-radius:12px;padding:24px;width:400px;max-width:90vw}
+.admin-title{font-size:1rem;font-weight:700;color:#f0883e;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
+.admin-close{background:none;border:none;color:#8b949e;cursor:pointer;font-size:1.1rem;padding:2px 6px}
+.admin-close:hover{color:#f0f6fc}
+.admin-result{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px 14px;font-family:'Courier New',monospace;font-size:1.1rem;letter-spacing:.12em;color:#3fb950;text-align:center;margin:12px 0;user-select:all}
+.copy-btn{width:100%;padding:8px;background:#1f4820;border:1px solid #3fb950;border-radius:6px;color:#3fb950;cursor:pointer;font-size:0.85rem;transition:all .15s}
+.copy-btn:hover{background:#3fb950;color:#0d1117}
+.key-list{max-height:160px;overflow-y:auto;margin-top:10px}
+.key-entry{background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:6px 10px;margin-bottom:5px;font-family:'Courier New',monospace;font-size:0.82rem;color:#8b949e;display:flex;justify-content:space-between;align-items:center}
+.key-entry span{color:#c9d1d9;font-size:0.72rem}
+
+/* ── App ── */
+#app{display:none;flex-direction:column;height:100vh}
+#app.unlocked{display:flex}
+
+/* ── Header ── */
+.hdr{background:linear-gradient(135deg,#161b22,#1f2937);padding:9px 18px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.hdr-icon{font-size:1.6rem;cursor:pointer;user-select:none;transition:transform .15s}
+.hdr-icon:hover{transform:scale(1.1)}
+.hdr h1{font-size:1.15rem;font-weight:700;color:#f0f6fc}
+.hdr p{font-size:0.7rem;color:#8b949e}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.lic-badge{padding:4px 10px;border-radius:12px;font-size:0.72rem;font-weight:600;cursor:pointer}
+.lic-ok{background:rgba(63,185,80,.15);color:#3fb950;border:1px solid rgba(63,185,80,.35)}
+.lic-warn{background:rgba(240,136,62,.15);color:#f0883e;border:1px solid rgba(240,136,62,.35)}
+.lic-exp{background:rgba(248,81,73,.15);color:#f85149;border:1px solid rgba(248,81,73,.35)}
+.print-btn{padding:4px 10px;background:transparent;border:1px solid #30363d;border-radius:12px;color:#8b949e;font-size:0.72rem;cursor:pointer;transition:all .15s}
+.print-btn:hover{border-color:#58a6ff;color:#58a6ff}
+
+/* ── Main layout ── */
+.main{display:grid;grid-template-columns:290px 1fr;gap:0;flex:1;overflow:hidden}
+.left{overflow-y:auto;padding:8px;border-right:1px solid #30363d;display:flex;flex-direction:column;gap:7px}
+.right{display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Cards ── */
+.card{background:#161b22;border:1px solid #30363d;border-radius:7px;padding:11px}
+.sec{font-size:0.67rem;font-weight:700;color:#58a6ff;text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px}
+
+/* ── Form ── */
+.fg{margin-bottom:7px}.fg:last-child{margin-bottom:0}
+label{display:block;font-size:0.72rem;color:#8b949e;margin-bottom:3px}
+select,input[type=number],input[type=date]{width:100%;padding:6px 9px;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#c9d1d9;font-size:0.82rem;outline:none;transition:border-color .15s}
+select:focus,input:focus{border-color:#58a6ff}
+.r2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.r3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px}
+
+/* ── Toggle buttons ── */
+.bg{display:flex;gap:5px}
+.tb{flex:1;padding:6px 3px;border:1px solid #30363d;border-radius:6px;background:transparent;color:#8b949e;cursor:pointer;transition:all .15s;text-align:center;font-size:0.7rem;line-height:1.3}
+.tb .ico{font-size:1rem;display:block;margin-bottom:1px}
+.tb.ab{border-color:#58a6ff;background:rgba(88,166,255,.12);color:#58a6ff}
+.tb.ag{border-color:#3fb950;background:rgba(63,185,80,.12);color:#3fb950}
+.tb.ao{border-color:#f0883e;background:rgba(240,136,62,.12);color:#f0883e}
+.tb:hover:not(.ab):not(.ag):not(.ao){border-color:#484f58;color:#c9d1d9}
+
+/* ── Presets ── */
+.prow{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:7px}
+.chip{padding:3px 7px;background:#0d1117;border:1px solid #30363d;border-radius:10px;font-size:0.67rem;color:#8b949e;cursor:pointer;transition:all .15s}
+.chip:hover,.chip.on{border-color:#3fb950;color:#3fb950;background:rgba(63,185,80,.08)}
+.preset-save{margin-top:7px;padding-top:7px;border-top:1px solid #21262d}
+.preset-save-row{display:flex;gap:5px;align-items:center}
+.preset-save-row input{flex:1;padding:5px 8px;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#c9d1d9;font-size:0.75rem;outline:none}
+.preset-save-row input:focus{border-color:#58a6ff}
+.preset-save-btn{padding:5px 9px;background:transparent;border:1px solid #3fb950;border-radius:5px;color:#3fb950;cursor:pointer;font-size:0.72rem;white-space:nowrap}
+.preset-save-btn:hover{background:rgba(63,185,80,.1)}
+
+/* ── Calc button ── */
+.cbtn{width:100%;padding:9px;background:linear-gradient(135deg,#238636,#1a7f2e);border:none;border-radius:7px;color:#fff;font-size:0.88rem;font-weight:600;cursor:pointer;transition:opacity .15s}
+.cbtn:hover{opacity:.88}
+
+/* ── Dims bar ── */
+.dbar{background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:5px 8px;font-size:0.7rem;color:#8b949e;margin-top:5px}
+
+/* ── Error ── */
+.err{color:#f85149;font-size:0.72rem;padding:5px 8px;background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.25);border-radius:5px;margin-top:5px}
+
+/* ── Results bar ── */
+.rbar{padding:9px 14px;border-bottom:1px solid #30363d;background:#161b22;flex-shrink:0}
+.placeholder2{color:#484f58;font-size:0.8rem;padding:8px 0}
+.stat-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sb{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:5px 10px;min-width:80px}
+.sb .v{font-size:1.05rem;font-weight:700;color:#f0f6fc;line-height:1}
+.sb .l{font-size:0.65rem;color:#8b949e;margin-top:2px}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;font-size:0.73rem;font-weight:600;margin-right:8px}
+.bg-green{background:rgba(63,185,80,.15);color:#3fb950;border:1px solid rgba(63,185,80,.4)}
+.bg-red{background:rgba(248,81,73,.15);color:#f85149;border:1px solid rgba(248,81,73,.4)}
+.bg-orange{background:rgba(240,136,62,.15);color:#f0883e;border:1px solid rgba(240,136,62,.4)}
+.bg-yellow{background:rgba(210,153,34,.15);color:#d4a017;border:1px solid rgba(210,153,34,.4)}
+.prog-w{background:#0d1117;border-radius:3px;height:5px;overflow:hidden;border:1px solid #30363d;width:100px;margin-top:3px}
+.prog-b{height:100%;border-radius:3px;transition:width .4s}
+.info-line{font-size:0.7rem;line-height:1.7;color:#8b949e;margin-top:4px}
+.info-line b{color:#c9d1d9}
+
+/* ── Comparison table ── */
+.cmp-wrap{padding:0 14px;border-bottom:1px solid #30363d;background:#0d1117;flex-shrink:0}
+.cmp-toggle{display:flex;align-items:center;gap:6px;padding:5px 0;cursor:pointer;font-size:0.72rem;color:#6e7681;user-select:none}
+.cmp-toggle:hover{color:#c9d1d9}
+.cmp-table-wrap{overflow-x:auto;max-height:130px;transition:max-height .25s}
+.cmp-table-wrap.collapsed{max-height:0;overflow:hidden}
+.cmp-table{width:100%;border-collapse:collapse;font-size:0.72rem;margin-bottom:7px}
+.cmp-table th{color:#58a6ff;font-weight:600;padding:4px 8px;text-align:left;border-bottom:1px solid #30363d;white-space:nowrap}
+.cmp-table td{padding:4px 8px;border-bottom:1px solid #21262d;white-space:nowrap}
+.cmp-table tr:last-child td{border-bottom:none}
+.cmp-table tr.best td{background:rgba(63,185,80,.07)}
+.cmp-table tr.selected td{background:rgba(56,139,253,.07)}
+.cmp-best{color:#3fb950;font-weight:600}
+.cmp-cur{color:#388bfd;font-weight:600}
+
+/* ── Viz ── */
+.viz-card{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:7px 12px 0}
+.viz-title{font-size:0.67rem;font-weight:700;color:#58a6ff;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px}
+.rot-bar{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.rot-btn{padding:3px 9px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;cursor:pointer;font-size:0.72rem;transition:all .15s}
+.rot-btn:hover{border-color:#58a6ff;color:#58a6ff}
+.rot-btn.active{border-color:#388bfd;color:#388bfd;background:rgba(56,139,253,.1)}
+#viewLbl{font-size:0.7rem;color:#6e7681;min-width:62px;text-align:center}
+.el-wrap{display:flex;align-items:center;gap:5px;font-size:0.7rem;color:#6e7681}
+input[type=range]{width:65px;accent-color:#58a6ff}
+.canvas-wrap{flex:1;position:relative;min-height:200px;overflow:hidden}
+#viz3d{display:block;width:100%;height:100%;cursor:grab;border-radius:7px;border:1px solid #30363d}
+#viz3d:active{cursor:grabbing}
+.legend{position:absolute;bottom:7px;left:8px;display:flex;gap:9px;font-size:0.67rem;color:#6e7681;pointer-events:none;flex-wrap:wrap}
+.leg-item{display:flex;align-items:center;gap:4px}
+.leg-dot{width:9px;height:9px;border-radius:2px;flex-shrink:0}
+.viz-footer{padding:3px 0 6px;font-size:0.64rem;color:#484f58;text-align:center;flex-shrink:0}
+
+/* ── Weight warning ── */
+.wt-warn{padding:5px 9px;border-radius:5px;font-size:0.75rem;margin-top:5px}
+.wt-ok{background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.25);color:#3fb950}
+.wt-over{background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.25);color:#f85149}
+
+/* ── Secondary package toggle ── */
+.pkg2-hdr{display:flex;align-items:center;cursor:pointer;user-select:none;gap:8px}
+.pkg2-hdr:hover .sec{color:#79c0ff}
+.pkg2-badge{margin-left:auto;font-size:0.66rem;font-weight:600;padding:2px 8px;border-radius:10px;transition:all .15s}
+.pkg2-on{background:rgba(78,204,163,.15);color:#4ecca3;border:1px solid rgba(78,204,163,.4)}
+.pkg2-off{background:#0d1117;color:#484f58;border:1px solid #30363d}
+.zone2-color{color:#4ecca3}
+
+/* ── Suggest table ── */
+.sug-table{width:100%;border-collapse:collapse;font-size:0.71rem;margin-bottom:6px}
+.sug-table th{color:#58a6ff;font-weight:600;padding:3px 7px;text-align:left;border-bottom:1px solid #30363d;white-space:nowrap}
+.sug-table td{padding:3px 7px;border-bottom:1px solid #21262d;white-space:nowrap}
+.sug-table tr:last-child td{border-bottom:none}
+.sug-table tr.s-best td{background:rgba(63,185,80,.07)}
+.sug-table tr.s-exact td{background:rgba(78,204,163,.1);outline:1px solid rgba(78,204,163,.4)}
+.sug-table tr.s-sel td{background:rgba(56,139,253,.08)}
+.apply-btn{padding:2px 8px;background:transparent;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer;font-size:0.68rem;transition:all .15s}
+.apply-btn:hover{border-color:#58a6ff;color:#58a6ff}
+.match-exact{color:#4ecca3;font-weight:700}
+.match-over{color:#f0883e}
+.match-under{color:#f85149}
+
+/* ── Print ── */
+@media print{
+  #lockScreen,#adminPanel,#app .hdr .hdr-right,#app .viz-card,#app .cmp-wrap .cmp-toggle{display:none!important}
+  body,#app,#app .main{height:auto;overflow:visible;display:block}
+  #app .main{grid-template-columns:1fr}
+  #app .left{border:none;overflow:visible}
+  .rbar{background:white;color:black;border:1px solid #ccc}
+}
+@media(max-width:820px){.main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- ══════════ LOCK SCREEN ══════════ -->
+<div id="lockScreen">
+  <div class="lock-wrap">
+    <div class="lock-icon" id="lockIconClick">🔐</div>
+    <div class="lock-title">Container Packing Calculator</div>
+    <div class="lock-sub">Professional shipping container optimizer</div>
+    <div class="lock-card">
+      <label>Enter License Key</label>
+      <input type="text" id="keyInput" placeholder="CPC-XXXX-XXXX-XXXX" maxlength="19" autocomplete="off" oninput="formatKeyInput()" onkeydown="if(event.key==='Enter')tryUnlock()">
+      <button class="lock-btn" onclick="tryUnlock()">🔓 Unlock</button>
+      <div id="lockMsg"></div>
+    </div>
+    <div style="margin-top:14px">
+      <button class="lock-btn" style="background:linear-gradient(135deg,#21262d,#30363d);border:1px solid #30363d;margin-top:0" onclick="enterDemo()">🔍 Try Demo (limited)</button>
+    </div>
+    <div class="lock-contact">Need a license key? &nbsp;<a href="mailto:hovanphapbk@gmail.com">hovanphapbk@gmail.com</a> &nbsp;|&nbsp; <span style="color:#484f58">v2.1</span></div>
+  </div>
+</div>
+
+<!-- ══════════ ADMIN PANEL ══════════ -->
+<div id="adminPanel">
+  <div class="admin-card">
+    <div class="admin-title">
+      🔑 License Key Generator
+      <button class="admin-close" onclick="document.getElementById('adminPanel').style.display='none'">✕</button>
+    </div>
+    <div class="fg"><label>Expiry Date</label><input type="date" id="adminDate"></div>
+    <button class="cbtn" style="margin-top:8px" onclick="generateAdminKey()">⚙ Generate Key</button>
+    <div class="admin-result" id="adminKeyResult" style="display:none"></div>
+    <button class="copy-btn" id="adminCopyBtn" style="display:none" onclick="copyAdminKey()">📋 Copy Key</button>
+    <div class="key-list" id="keyHistory"></div>
+  </div>
+</div>
+
+<!-- ══════════ APP ══════════ -->
+<div id="app">
+
+<div class="hdr">
+  <div class="hdr-icon" id="hdrIcon" title="Click 5× for admin">🚢</div>
+  <div>
+    <h1>Container Packing Calculator</h1>
+    <p>Vietnam shipping containers — 3D layout · gap clearance · weight check · comparison</p>
+  </div>
+  <div class="hdr-right">
+    <button class="print-btn" onclick="window.print()">🖨 Print</button>
+    <div id="licBadge" class="lic-badge lic-ok" onclick="showKeyDialog()">✓ Licensed</div>
+  </div>
+</div>
+
+<div class="main">
+
+<!-- ═══ LEFT ═══ -->
+<div class="left">
+
+  <!-- Container -->
+  <div class="card">
+    <div class="sec">🚢 Container</div>
+    <div class="fg">
+      <select id="containerSelect" onchange="onContainerChange()">
+        <option value="10dc">10ft DC — 2.90×2.23×2.18 m</option>
+        <option value="20dc" selected>20ft DC (Standard) — 5.90×2.35×2.39 m</option>
+        <option value="20hc">20ft HC (High Cube) — 5.90×2.35×2.70 m</option>
+        <option value="40dc">40ft DC (Standard) — 12.03×2.35×2.39 m</option>
+        <option value="40hc">40ft HC (High Cube) — 12.03×2.35×2.70 m</option>
+        <option value="45hc">45ft HC (High Cube) — 13.56×2.35×2.70 m</option>
+        <option value="custom">Custom Size…</option>
+      </select>
+    </div>
+    <div id="customWrap" style="display:none">
+      <div class="r3">
+        <div class="fg"><label>L (m)</label><input type="number" id="cL" step="0.01" min="0.1" value="5.90" oninput="updateContainerDims()"></div>
+        <div class="fg"><label>W (m)</label><input type="number" id="cW" step="0.01" min="0.1" value="2.35" oninput="updateContainerDims()"></div>
+        <div class="fg"><label>H (m)</label><input type="number" id="cH" step="0.01" min="0.1" value="2.39" oninput="updateContainerDims()"></div>
+      </div>
+    </div>
+    <div class="dbar" id="containerDims"></div>
+  </div>
+
+  <!-- Package Shape -->
+  <div class="card">
+    <div class="sec">📦 Package Shape</div>
+    <div class="fg" style="margin-bottom:7px">
+      <select id="shapeSelect" onchange="setType(this.value)" style="font-size:0.82rem">
+        <optgroup label="Standard shapes">
+          <option value="cylinder">⭕ Cylinder</option>
+          <option value="square">⬛ Square prism</option>
+          <option value="rect">📦 Rectangle box</option>
+          <option value="sphere">🔵 Sphere</option>
+          <option value="wedge">🔺 Wedge (triangular prism)</option>
+          <option value="bag">🛍 Bag / Sack</option>
+        </optgroup>
+        <optgroup label="Custom presets" id="customPresetsOptgroup" style="display:none"></optgroup>
+      </select>
+    </div>
+    <div class="prow" id="presets"></div>
+
+    <div id="inputs_cylinder">
+      <div class="r2">
+        <div class="fg"><label>Diameter (cm)</label><input type="number" id="p_d" step="0.1" min="0.1" value="30"></div>
+        <div class="fg"><label>Height (cm)</label><input type="number" id="p_ch" step="0.1" min="0.1" value="60"></div>
+      </div>
+    </div>
+    <div id="inputs_square" style="display:none">
+      <div class="r2">
+        <div class="fg"><label>Side (cm)</label><input type="number" id="p_s" step="0.1" min="0.1" value="40"></div>
+        <div class="fg"><label>Height (cm)</label><input type="number" id="p_sh" step="0.1" min="0.1" value="60"></div>
+      </div>
+    </div>
+    <div id="inputs_rect" style="display:none">
+      <div class="r3">
+        <div class="fg"><label>Length (cm)</label><input type="number" id="p_l" step="0.1" min="0.1" value="60"></div>
+        <div class="fg"><label>Width (cm)</label><input type="number" id="p_w" step="0.1" min="0.1" value="40"></div>
+        <div class="fg"><label>Height (cm)</label><input type="number" id="p_rh" step="0.1" min="0.1" value="30"></div>
+      </div>
+    </div>
+    <div id="inputs_sphere" style="display:none">
+      <div class="fg"><label>Diameter (cm)</label><input type="number" id="p_sd" step="0.1" min="0.1" value="30"></div>
+    </div>
+    <div id="inputs_wedge" style="display:none">
+      <div class="r3">
+        <div class="fg"><label>Length (cm)</label><input type="number" id="p_wdl" step="0.1" min="0.1" value="60"></div>
+        <div class="fg"><label>Width (cm)</label><input type="number" id="p_wdw" step="0.1" min="0.1" value="40"></div>
+        <div class="fg"><label>Height (cm)</label><input type="number" id="p_wdh" step="0.1" min="0.1" value="30"></div>
+      </div>
+      <div style="font-size:0.67rem;color:#484f58;margin-top:3px">Right-triangle cross-section · Vol = ½×L×W×H</div>
+    </div>
+    <div id="inputs_bag" style="display:none">
+      <div class="r3">
+        <div class="fg"><label>Length (cm)</label><input type="number" id="p_bgl" step="0.1" min="0.1" value="60"></div>
+        <div class="fg"><label>Width (cm)</label><input type="number" id="p_bgw" step="0.1" min="0.1" value="40"></div>
+        <div class="fg"><label>Height (cm)</label><input type="number" id="p_bgh" step="0.1" min="0.1" value="30"></div>
+      </div>
+      <div style="font-size:0.67rem;color:#484f58;margin-top:3px">Flexible sack · Vol ≈ 75% of bounding box</div>
+    </div>
+    <div class="preset-save">
+      <div style="font-size:0.67rem;color:#8b949e;margin-bottom:4px">Save current dims as preset:</div>
+      <div class="preset-save-row">
+        <input type="text" id="presetNameInput" placeholder="Preset name…" maxlength="40">
+        <button class="preset-save-btn" onclick="saveCustomPreset()">＋ Save</button>
+      </div>
+      <div id="customPresetChips" class="prow" style="margin-top:5px;margin-bottom:0"></div>
+    </div>
+
+    <!-- Gap + Weight -->
+    <div style="border-top:1px solid #21262d;margin-top:8px;padding-top:8px">
+      <div class="r2">
+        <div class="fg"><label>Gap between packages (mm)</label><input type="number" id="p_gap" step="1" min="0" value="0" placeholder="0"></div>
+        <div class="fg"><label>Weight per package (kg)</label><input type="number" id="p_weight" step="0.1" min="0" value="" placeholder="optional"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Secondary Package (Mixed Load) -->
+  <div class="card" id="pkg2Card">
+    <div class="pkg2-hdr" onclick="togglePkg2()">
+      <span class="sec" style="margin-bottom:0">📦 Secondary Package</span>
+      <span class="pkg2-badge pkg2-off" id="pkg2Badge">OFF</span>
+    </div>
+    <div id="pkg2Body" style="display:none;margin-top:8px">
+      <div class="bg" style="margin-bottom:7px">
+        <button class="tb ab" id="btn2_cylinder" onclick="setType2('cylinder')"><span class="ico">⭕</span>Cylinder</button>
+        <button class="tb" id="btn2_square" onclick="setType2('square')"><span class="ico">⬛</span>Square</button>
+        <button class="tb" id="btn2_rect" onclick="setType2('rect')"><span class="ico">📦</span>Rectangle</button>
+        <button class="tb" id="btn2_sphere" onclick="setType2('sphere')"><span class="ico">🔵</span>Sphere</button>
+      </div>
+      <div id="inputs2_cylinder">
+        <div class="r2">
+          <div class="fg"><label>Diameter (cm)</label><input type="number" id="p2_d" step="0.1" min="0.1" value="20"></div>
+          <div class="fg"><label>Height (cm)</label><input type="number" id="p2_ch" step="0.1" min="0.1" value="40"></div>
+        </div>
+      </div>
+      <div id="inputs2_square" style="display:none">
+        <div class="r2">
+          <div class="fg"><label>Side (cm)</label><input type="number" id="p2_s" step="0.1" min="0.1" value="30"></div>
+          <div class="fg"><label>Height (cm)</label><input type="number" id="p2_sh" step="0.1" min="0.1" value="40"></div>
+        </div>
+      </div>
+      <div id="inputs2_rect" style="display:none">
+        <div class="r3">
+          <div class="fg"><label>Length (cm)</label><input type="number" id="p2_l" step="0.1" min="0.1" value="50"></div>
+          <div class="fg"><label>Width (cm)</label><input type="number" id="p2_w" step="0.1" min="0.1" value="30"></div>
+          <div class="fg"><label>Height (cm)</label><input type="number" id="p2_rh" step="0.1" min="0.1" value="20"></div>
+        </div>
+      </div>
+      <div id="inputs2_sphere" style="display:none">
+        <div class="fg"><label>Diameter (cm)</label><input type="number" id="p2_sd" step="0.1" min="0.1" value="20"></div>
+      </div>
+      <div style="border-top:1px solid #21262d;margin-top:8px;padding-top:8px">
+        <div class="r2">
+          <div class="fg"><label>Gap (mm)</label><input type="number" id="p2_gap" step="1" min="0" value="0"></div>
+          <div class="fg"><label>Weight/pkg (kg)</label><input type="number" id="p2_weight" step="0.1" min="0" value="" placeholder="optional"></div>
+        </div>
+      </div>
+      <div style="font-size:0.67rem;color:#484f58;margin-top:5px">Fills remaining height above Zone 1</div>
+    </div>
+  </div>
+
+  <!-- Orientation -->
+  <div class="card">
+    <div class="sec">↕ Orientation</div>
+    <div class="bg">
+      <button class="tb ag" id="orient_z" onclick="setOrientation('z')">
+        <span class="ico">↕️</span><b>Upright</b><br><small style="opacity:.7">Z-axis</small>
+      </button>
+      <button class="tb" id="orient_x" onclick="setOrientation('x')">
+        <span class="ico">↔️</span><b>Lengthwise</b><br><small style="opacity:.7">X-axis</small>
+      </button>
+      <button class="tb" id="orient_y" onclick="setOrientation('y')">
+        <span class="ico">↕️</span><b>Widthwise</b><br><small style="opacity:.7">Y-axis</small>
+      </button>
+    </div>
+  </div>
+
+  <!-- Output Mode -->
+  <div class="card">
+    <div class="sec">📊 Output Mode</div>
+    <div class="bg" style="margin-bottom:7px">
+      <button class="tb ao" id="mode_auto" onclick="setMode('auto')">
+        <span class="ico">🎯</span><b>Max Capacity</b><br><small style="opacity:.7">How many fit?</small>
+      </button>
+      <button class="tb" id="mode_custom" onclick="setMode('custom')">
+        <span class="ico">🔢</span><b>Status Check</b><br><small style="opacity:.7">Count→status</small>
+      </button>
+      <button class="tb" id="mode_suggest" onclick="setMode('suggest')">
+        <span class="ico">💡</span><b>Suggest Size</b><br><small style="opacity:.7">Best fit dims</small>
+      </button>
+    </div>
+    <div id="custom_wrap" style="display:none">
+      <div class="fg"><label>Number of Packages</label><input type="number" id="pkg_count" min="1" step="1" value="100"></div>
+    </div>
+    <div id="suggest_wrap" style="display:none">
+      <div class="fg"><label>Target count (optional)</label><input type="number" id="sug_target" min="1" step="1" placeholder="e.g. 100 — leave blank for best vol%"></div>
+    </div>
+    <div id="calc_err" class="err" style="display:none"></div>
+    <button class="cbtn" onclick="calculate()">⚡ Calculate</button>
+  </div>
+
+</div><!-- /left -->
+
+<!-- ═══ RIGHT ═══ -->
+<div class="right">
+
+  <div class="rbar" id="rbar">
+    <div class="placeholder2">⬅ Configure container &amp; package, then press ⚡ Calculate</div>
+  </div>
+
+  <!-- Comparison table -->
+  <div class="cmp-wrap" id="cmpWrap" style="display:none">
+    <div class="cmp-toggle" onclick="toggleCmp()">
+      <span id="cmpArrow">▼</span>
+      <span>Container Comparison — all sizes with current package</span>
+    </div>
+    <div class="cmp-table-wrap" id="cmpTableWrap">
+      <table class="cmp-table" id="cmpTable"></table>
+    </div>
+  </div>
+
+  <!-- 3D Visualization -->
+  <div class="viz-card">
+    <div class="viz-title">
+      <span>🏗️ 3D Layout</span>
+      <div class="rot-bar">
+        <button class="rot-btn" onclick="rotateAz(-Math.PI/4)">◀ Rotate</button>
+        <span id="viewLbl">Az 45°</span>
+        <button class="rot-btn" onclick="rotateAz(Math.PI/4)">Rotate ▶</button>
+        <span style="color:#484f58">|</span>
+        <button class="rot-btn" id="vNE" onclick="setPreset(45)">NE</button>
+        <button class="rot-btn" id="vNW" onclick="setPreset(135)">NW</button>
+        <button class="rot-btn" id="vSW" onclick="setPreset(225)">SW</button>
+        <button class="rot-btn" id="vSE" onclick="setPreset(315)">SE</button>
+        <span style="color:#484f58">|</span>
+        <div class="el-wrap">Elev<input type="range" id="elevSlider" min="15" max="60" value="30" oninput="onElevChange()"></div>
+      </div>
+    </div>
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="viz3d"></canvas>
+      <div class="legend" id="legend3d" style="display:none">
+        <div class="leg-item"><div class="leg-dot" style="background:#3fb950"></div>Loaded</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#f85149"></div>Overload</div>
+        <div class="leg-item"><div class="leg-dot" style="background:rgba(56,139,253,0.3);border:1px solid #388bfd"></div>Unused space</div>
+      </div>
+    </div>
+    <div class="viz-footer">Drag canvas to rotate · Blue overlay = unused container space</div>
+  </div>
+
+</div><!-- /right -->
+</div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LICENSE KEY SYSTEM
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Key format: CPC-XXXX-XXXX-XXXX (12 hex chars in 3 groups)
+// p1 = (expiryDays ^ _KA) & 0xFFFF
+// p2 = ((expiryDays * 31337 + _KB) >>> 0) & 0xFFFF
+// p3 = ((expiryDays * 65537 + _KC) >>> 0) & 0xFFFF
+// expiryDays = days from Unix epoch (1970-01-01)
+const _KA = 0xA37F, _KB = 0x5E2A, _KC = 0x9B1C;
+const LS_LIC = 'cpc_lic';
+
+function validateLicKey(raw) {
+  const k = raw.toUpperCase().replace(/[\s\-]/g,''); // strip dashes/spaces only — P is not hex so must not strip letters
+  if (k.length !== 15 || k.slice(0,3) !== 'CPC') return null; // CPC + 12 hex
+  const hex12 = k.slice(3);
+  if (!/^[0-9A-F]{12}$/.test(hex12)) return null;
+  const days = parseInt(hex12.slice(0,4),16) ^ _KA;
+  if (days < 18000 || days > 58000) return null; // sanity 2019–2128
+  const ep2 = ((days*31337+_KB)>>>0)&0xFFFF;
+  const ep3 = ((days*65537+_KC)>>>0)&0xFFFF;
+  if (parseInt(hex12.slice(4,8),16) !== ep2) return null;
+  if (parseInt(hex12.slice(8,12),16) !== ep3) return null;
+  return new Date(days*86400000);
+}
+
+function genLicKey(expiryDate) {
+  const days = Math.floor(expiryDate.getTime()/86400000);
+  const p1=((days^_KA)&0xFFFF).toString(16).toUpperCase().padStart(4,'0');
+  const p2=(((days*31337+_KB)>>>0)&0xFFFF).toString(16).toUpperCase().padStart(4,'0');
+  const p3=(((days*65537+_KC)>>>0)&0xFFFF).toString(16).toUpperCase().padStart(4,'0');
+  return `CPC-${p1}-${p2}-${p3}`;
+}
+
+function formatKeyInput() {
+  const el=document.getElementById('keyInput');
+  let v=el.value.toUpperCase().replace(/[^0-9A-Z-]/g,'');
+  // Rebuild: CPC-XXXX-XXXX-XXXX
+  const raw=v.replace(/-/g,'');
+  let out='';
+  for(let i=0;i<raw.length&&i<15;i++){
+    if(i===3||i===7||i===11) out+='-';
+    out+=raw[i];
+  }
+  el.value=out;
+}
+
+function tryUnlock() {
+  const raw=document.getElementById('keyInput').value.trim();
+  const msgEl=document.getElementById('lockMsg');
+  const inp=document.getElementById('keyInput');
+  inp.classList.remove('err-inp');
+  const expiry=validateLicKey(raw);
+  if(!expiry){
+    inp.classList.add('err-inp');
+    msgEl.className='bad';
+    msgEl.textContent='Invalid key. Check format and try again.';
+    return;
+  }
+  const today=new Date(); today.setHours(0,0,0,0);
+  expiry.setHours(0,0,0,0);
+  if(expiry<today){
+    inp.classList.add('err-inp');
+    msgEl.className='warn';
+    msgEl.textContent=`Key expired on ${expiry.toLocaleDateString('en-GB')}. Please renew.`;
+    return;
+  }
+  // Valid — store and unlock
+  localStorage.setItem(LS_LIC, JSON.stringify({key:raw.toUpperCase(),expiry:expiry.toISOString()}));
+  msgEl.className='ok';
+  msgEl.textContent='✓ License valid — loading…';
+  setTimeout(()=>{unlockApp(expiry);},600);
+}
+
+function checkStoredLicense() {
+  try {
+    const raw=localStorage.getItem(LS_LIC);
+    if(!raw) return false;
+    const st=JSON.parse(raw);
+    const expiry=validateLicKey(st.key||'');
+    if(!expiry) return false;
+    const today=new Date(); today.setHours(0,0,0,0);
+    expiry.setHours(0,0,0,0);
+    if(expiry<today){ localStorage.removeItem(LS_LIC); return false; }
+    unlockApp(expiry);
+    return true;
+  } catch(e){return false;}
+}
+
+function unlockApp(expiry) {
+  document.getElementById('lockScreen').style.display='none';
+  document.getElementById('app').classList.add('unlocked');
+  // Update license badge
+  const today=new Date(); today.setHours(0,0,0,0);
+  expiry.setHours(0,0,0,0);
+  const daysLeft=Math.round((expiry-today)/86400000);
+  const badge=document.getElementById('licBadge');
+  if(daysLeft<=30){badge.className='lic-badge lic-warn';badge.textContent=`⚠ ${daysLeft}d left`;}
+  else{badge.className='lic-badge lic-ok';badge.textContent=`✓ Until ${expiry.toLocaleDateString('en-GB')}`;}
+  init();
+}
+
+function showKeyDialog() {
+  // Show a simple dialog to enter new key
+  const cur=document.getElementById('keyInput').value;
+  document.getElementById('lockScreen').style.display='flex';
+  document.getElementById('app').classList.remove('unlocked');
+}
+
+// ── Admin panel ──
+let adminClicks=0,adminTimer=null;
+function handleAdminClick(){
+  adminClicks++;
+  // Start the 3-second window only on first click
+  if(adminClicks===1){
+    adminTimer=setTimeout(()=>{adminClicks=0;},3000);
+  }
+  if(adminClicks>=5){
+    clearTimeout(adminTimer);
+    adminClicks=0;
+    const d=new Date(); d.setFullYear(d.getFullYear()+1);
+    document.getElementById('adminDate').value=d.toISOString().split('T')[0];
+    document.getElementById('adminPanel').style.display='flex';
+  }
+}
+function setupAdminAccess() {
+  document.getElementById('hdrIcon').addEventListener('click', handleAdminClick);
+  document.getElementById('lockIconClick').addEventListener('click', handleAdminClick);
+}
+
+function generateAdminKey() {
+  const val=document.getElementById('adminDate').value;
+  if(!val){alert('Select an expiry date.');return;}
+  const expiry=new Date(val+'T00:00:00');
+  const today=new Date(); today.setHours(0,0,0,0);
+  if(expiry<=today){alert('Expiry date must be in the future.');return;}
+  const key=genLicKey(expiry);
+  document.getElementById('adminKeyResult').textContent=key;
+  document.getElementById('adminKeyResult').style.display='block';
+  document.getElementById('adminCopyBtn').style.display='block';
+  // Add to history
+  const hist=document.getElementById('keyHistory');
+  const entry=document.createElement('div');
+  entry.className='key-entry';
+  entry.innerHTML=`${key} <span>Expires ${expiry.toLocaleDateString('en-GB')}</span>`;
+  hist.prepend(entry);
+}
+
+function copyAdminKey() {
+  const k=document.getElementById('adminKeyResult').textContent;
+  navigator.clipboard.writeText(k).then(()=>{
+    const btn=document.getElementById('adminCopyBtn');
+    btn.textContent='✓ Copied!';
+    setTimeout(()=>{btn.textContent='📋 Copy Key';},2000);
+  });
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DEMO MODE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let isDemo=false;
+function enterDemo(){
+  isDemo=true;
+  document.getElementById('lockScreen').style.display='none';
+  document.getElementById('app').classList.add('unlocked');
+  const badge=document.getElementById('licBadge');
+  badge.className='lic-badge lic-warn';
+  badge.textContent='⚡ DEMO';
+  badge.onclick=()=>alert('Demo mode — limited features.\nContact hovanphapbk@gmail.com for a full license.');
+  init();
+}
+function applyDemoRestrictions(){
+  // Disable HC container options
+  [...document.getElementById('containerSelect').options].forEach(o=>{
+    if(!['10dc','20dc','40dc'].includes(o.value))o.disabled=true;
+  });
+  if(!['10dc','20dc','40dc'].includes(document.getElementById('containerSelect').value)){
+    document.getElementById('containerSelect').value='20dc';onContainerChange();
+  }
+  // Disable Suggest Size button
+  const sb=document.getElementById('mode_suggest');
+  sb.disabled=true;sb.style.opacity='0.35';sb.title='Full version only';
+  // Hide mixed load, comparison, print
+  document.getElementById('pkg2Card').style.display='none';
+  document.getElementById('cmpWrap').style.display='none';
+  document.querySelector('.print-btn').style.display='none';
+  // Add demo notice banner under header
+  const banner=document.createElement('div');
+  banner.style.cssText='background:rgba(240,136,62,.1);border-bottom:1px solid rgba(240,136,62,.3);padding:5px 16px;font-size:0.72rem;color:#f0883e;flex-shrink:0;display:flex;align-items:center;gap:10px';
+  banner.innerHTML='⚡ <b>Demo mode</b> — 3 containers · no HC variants · no Suggest Size · no Mixed Load · max 200 packages in 3D &nbsp;|&nbsp; <a href="mailto:hovanphapbk@gmail.com" style="color:#58a6ff;text-decoration:none">Get full license →</a>';
+  document.getElementById('app').insertBefore(banner,document.querySelector('.main'));
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DATA
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const CONTAINERS = {
+  '10dc': {label:'10ft DC',     l:290,  w:223, h:218, payload:14000},
+  '20dc': {label:'20ft DC Std', l:590,  w:235, h:239, payload:28230},
+  '20hc': {label:'20ft HC',     l:590,  w:235, h:270, payload:28130},
+  '40dc': {label:'40ft DC Std', l:1203, w:235, h:239, payload:26780},
+  '40hc': {label:'40ft HC',     l:1203, w:235, h:270, payload:26460},
+  '45hc': {label:'45ft HC',     l:1356, w:235, h:270, payload:27430},
+};
+const PRESETS = {
+  cylinder:[
+    {label:'Tin can (d10×h12)',        d:10,  h:12},
+    {label:'Paint drum (d31×h43)',     d:31,  h:43},
+    {label:'Oil barrel (d58×h88)',     d:58,  h:88},
+    {label:'Gas cylinder (d31×h138)', d:31,  h:138},
+    {label:'Water tank (d120×h120)',  d:120, h:120},
+  ],
+  square:[
+    {label:'Small box (30×30×30)',  s:30, h:30},
+    {label:'Carton (40×40×60)',     s:40, h:60},
+    {label:'Medium (50×50×50)',     s:50, h:50},
+    {label:'Crate (80×80×80)',      s:80, h:80},
+  ],
+  rect:[
+    {label:'Shoe box (30×20×12)',        l:30,  w:20, h:12},
+    {label:'Standard carton (60×40×40)', l:60,  w:40, h:40},
+    {label:'Half pallet (80×60×120)',    l:80,  w:60, h:120},
+    {label:'Euro pallet (120×80×145)',  l:120, w:80, h:145},
+    {label:'Big bag (90×90×110)',        l:90,  w:90, h:110},
+  ],
+  sphere:[
+    {label:'Tennis ball (d6.7)', d:6.7},
+    {label:'Football (d22)',     d:22},
+    {label:'Ball (d30)',         d:30},
+    {label:'Bowling ball (d22)', d:22},
+    {label:'Large ball (d60)',   d:60},
+  ],
+  wedge:[
+    {label:'Small wedge (40×30×20)',   l:40, w:30, h:20},
+    {label:'Medium wedge (80×60×40)',  l:80, w:60, h:40},
+    {label:'Wedge pallet (120×80×30)', l:120,w:80, h:30},
+  ],
+  bag:[
+    {label:'Small sack (50×35×20)',    l:50, w:35, h:20},
+    {label:'Rice 50kg (75×40×22)',     l:75, w:40, h:22},
+    {label:'Big bag (90×90×110)',      l:90, w:90, h:110},
+    {label:'Cement 50kg (70×40×25)',   l:70, w:40, h:25},
+  ],
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// STATE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let pkgType='cylinder', orientation='z', outputMode='auto';
+let pkg2Type='cylinder', pkg2Enabled=false;
+let viewAz=Math.PI/4, viewEl=Math.PI/6, lastViz=null;
+let cmpVisible=true;
+
+const LS_KEY='cpc_v2';
+function saveState() {
+  try{localStorage.setItem(LS_KEY,JSON.stringify({
+    container:document.getElementById('containerSelect').value,
+    cL:document.getElementById('cL').value,cW:document.getElementById('cW').value,cH:document.getElementById('cH').value,
+    pkgType,orientation,outputMode,
+    p_d:document.getElementById('p_d').value,p_ch:document.getElementById('p_ch').value,
+    p_s:document.getElementById('p_s').value,p_sh:document.getElementById('p_sh').value,
+    p_l:document.getElementById('p_l').value,p_w:document.getElementById('p_w').value,p_rh:document.getElementById('p_rh').value,
+    p_sd:document.getElementById('p_sd').value,
+    p_wdl:document.getElementById('p_wdl').value,p_wdw:document.getElementById('p_wdw').value,p_wdh:document.getElementById('p_wdh').value,
+    p_bgl:document.getElementById('p_bgl').value,p_bgw:document.getElementById('p_bgw').value,p_bgh:document.getElementById('p_bgh').value,
+    p_gap:document.getElementById('p_gap').value,
+    p_weight:document.getElementById('p_weight').value,
+    pkg_count:document.getElementById('pkg_count').value,
+    viewAz,viewEl,
+    pkg2Enabled,pkg2Type,
+    p2_d:document.getElementById('p2_d').value,p2_ch:document.getElementById('p2_ch').value,
+    p2_s:document.getElementById('p2_s').value,p2_sh:document.getElementById('p2_sh').value,
+    p2_l:document.getElementById('p2_l').value,p2_w:document.getElementById('p2_w').value,p2_rh:document.getElementById('p2_rh').value,
+    p2_sd:document.getElementById('p2_sd').value,
+    p2_gap:document.getElementById('p2_gap').value,p2_weight:document.getElementById('p2_weight').value,
+  }));}catch(e){}
+}
+function loadState() {
+  try{
+    const st=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
+    const s=(id,v)=>{if(v!==undefined&&v!=='')document.getElementById(id).value=v;};
+    s('containerSelect',st.container);s('cL',st.cL);s('cW',st.cW);s('cH',st.cH);
+    s('p_d',st.p_d);s('p_ch',st.p_ch);s('p_s',st.p_s);s('p_sh',st.p_sh);
+    s('p_l',st.p_l);s('p_w',st.p_w);s('p_rh',st.p_rh);s('p_sd',st.p_sd);
+    s('p_wdl',st.p_wdl);s('p_wdw',st.p_wdw);s('p_wdh',st.p_wdh);
+    s('p_bgl',st.p_bgl);s('p_bgw',st.p_bgw);s('p_bgh',st.p_bgh);
+    s('p_gap',st.p_gap);s('p_weight',st.p_weight);s('pkg_count',st.pkg_count);
+    s('p2_d',st.p2_d);s('p2_ch',st.p2_ch);s('p2_s',st.p2_s);s('p2_sh',st.p2_sh);
+    s('p2_l',st.p2_l);s('p2_w',st.p2_w);s('p2_rh',st.p2_rh);s('p2_sd',st.p2_sd);
+    s('p2_gap',st.p2_gap);s('p2_weight',st.p2_weight);
+    if(st.viewAz!==undefined)viewAz=st.viewAz;
+    if(st.viewEl!==undefined){viewEl=st.viewEl;document.getElementById('elevSlider').value=Math.round(st.viewEl*180/Math.PI);}
+    if(st.pkgType)setType(st.pkgType);
+    if(st.orientation){const migr={'vertical':'z','horizontal':'x'};setOrientation(migr[st.orientation]||st.orientation);}
+    if(st.outputMode)setMode(st.outputMode);
+    if(st.pkg2Type)setType2(st.pkg2Type);
+    if(st.pkg2Enabled&&!pkg2Enabled)togglePkg2();
+  }catch(e){}
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// INIT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function init() {
+  loadState();
+  onContainerChange();
+  renderPresets();
+  refreshCustomPresetsDropdown();
+  if(isDemo)applyDemoRestrictions();
+  updateContainerDims();
+  initDrag();
+  drawEmpty3D();
+  window.addEventListener('resize',()=>{if(lastViz)draw3D(...lastViz);else drawEmpty3D();});
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CONTAINER
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function onContainerChange() {
+  document.getElementById('customWrap').style.display=
+    document.getElementById('containerSelect').value==='custom'?'block':'none';
+  updateContainerDims();
+}
+function getContainerDims() {
+  const v=document.getElementById('containerSelect').value;
+  if(v==='custom')return{l:(parseFloat(document.getElementById('cL').value)||5.9)*100,w:(parseFloat(document.getElementById('cW').value)||2.35)*100,h:(parseFloat(document.getElementById('cH').value)||2.39)*100,payload:null};
+  return{...CONTAINERS[v]};
+}
+function updateContainerDims() {
+  const c=getContainerDims();
+  const vol=(c.l/100*c.w/100*c.h/100).toFixed(2);
+  document.getElementById('containerDims').innerHTML=
+    `<b>${(c.l/100).toFixed(2)}</b>×<b>${(c.w/100).toFixed(2)}</b>×<b>${(c.h/100).toFixed(2)}</b> m &nbsp;|&nbsp; Vol: <b>${vol} m³</b>`+
+    (c.payload?` &nbsp;|&nbsp; Payload: <b>${c.payload.toLocaleString()} kg</b>`:'');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PACKAGE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function setType(type) {
+  if(type.startsWith('custom_')){const id=parseInt(type.replace('custom_',''));applyCustomPreset(id);return;}
+  pkgType=type;
+  ['cylinder','square','rect','sphere','wedge','bag'].forEach(t=>{
+    const el=document.getElementById('inputs_'+t);
+    if(el)el.style.display=t===type?'block':'none';
+  });
+  const sel=document.getElementById('shapeSelect');
+  if(sel){const opt=[...sel.options].find(o=>o.value===type);if(opt)sel.value=type;}
+  renderPresets();
+}
+function renderPresets() {
+  document.getElementById('presets').innerHTML=PRESETS[pkgType].map((p,i)=>
+    `<span class="chip" onclick="applyPreset(${i})">${p.label}</span>`).join('');
+}
+function applyPreset(i) {
+  const p=PRESETS[pkgType][i];
+  if(pkgType==='cylinder'){document.getElementById('p_d').value=p.d;document.getElementById('p_ch').value=p.h;}
+  else if(pkgType==='square'){document.getElementById('p_s').value=p.s;document.getElementById('p_sh').value=p.h;}
+  else if(pkgType==='rect'){document.getElementById('p_l').value=p.l;document.getElementById('p_w').value=p.w;document.getElementById('p_rh').value=p.h;}
+  else if(pkgType==='wedge'){document.getElementById('p_wdl').value=p.l;document.getElementById('p_wdw').value=p.w;document.getElementById('p_wdh').value=p.h;}
+  else if(pkgType==='bag'){document.getElementById('p_bgl').value=p.l;document.getElementById('p_bgw').value=p.w;document.getElementById('p_bgh').value=p.h;}
+  else{document.getElementById('p_sd').value=p.d;}
+  document.querySelectorAll('#presets .chip').forEach((el,j)=>el.classList.toggle('on',j===i));
+}
+function setOrientation(o){orientation=o;['z','x','y'].forEach(x=>document.getElementById('orient_'+x).classList.toggle('ag',x===o));}
+function setMode(m){
+  if(isDemo&&m==='suggest'){alert('💡 Suggest Size is a full-version feature.\nContact hovanphapbk@gmail.com for a license.');return;}
+  outputMode=m;['auto','custom','suggest'].forEach(x=>document.getElementById('mode_'+x).classList.toggle('ao',x===m));document.getElementById('custom_wrap').style.display=m==='custom'?'block':'none';document.getElementById('suggest_wrap').style.display=m==='suggest'?'block':'none';
+}
+
+function getGapCm(){return(parseFloat(document.getElementById('p_gap').value)||0)/10;}// mm→cm
+
+function getPkgDims() {
+  const g=getGapCm();
+  let raw;
+  if(pkgType==='cylinder'){
+    const d=parseFloat(document.getElementById('p_d').value)||0,h=parseFloat(document.getElementById('p_ch').value)||0;
+    if(orientation==='z')raw={footL:d,footW:d,stackH:h};
+    else if(orientation==='x')raw={footL:h,footW:d,stackH:d};
+    else raw={footL:d,footW:h,stackH:d};
+  } else if(pkgType==='square'){
+    const s=parseFloat(document.getElementById('p_s').value)||0,h=parseFloat(document.getElementById('p_sh').value)||0;
+    if(orientation==='z')raw={footL:s,footW:s,stackH:h};
+    else if(orientation==='x')raw={footL:h,footW:s,stackH:s};
+    else raw={footL:s,footW:h,stackH:s};
+  } else if(pkgType==='rect'){
+    const l=parseFloat(document.getElementById('p_l').value)||0,w=parseFloat(document.getElementById('p_w').value)||0,h=parseFloat(document.getElementById('p_rh').value)||0;
+    if(orientation==='z')raw={footL:l,footW:w,stackH:h};
+    else if(orientation==='x')raw={footL:h,footW:w,stackH:l};
+    else raw={footL:l,footW:h,stackH:w};
+  } else if(pkgType==='wedge'){
+    const l=parseFloat(document.getElementById('p_wdl').value)||0,w=parseFloat(document.getElementById('p_wdw').value)||0,h=parseFloat(document.getElementById('p_wdh').value)||0;
+    if(orientation==='z')raw={footL:l,footW:w,stackH:h};
+    else if(orientation==='x')raw={footL:h,footW:w,stackH:l};
+    else raw={footL:l,footW:h,stackH:w};
+  } else if(pkgType==='bag'){
+    const l=parseFloat(document.getElementById('p_bgl').value)||0,w=parseFloat(document.getElementById('p_bgw').value)||0,h=parseFloat(document.getElementById('p_bgh').value)||0;
+    if(orientation==='z')raw={footL:l,footW:w,stackH:h};
+    else if(orientation==='x')raw={footL:h,footW:w,stackH:l};
+    else raw={footL:l,footW:h,stackH:w};
+  } else {
+    const d=parseFloat(document.getElementById('p_sd').value)||0;raw={footL:d,footW:d,stackH:d};
+  }
+  return{...raw,gap:g,effL:raw.footL+g,effW:raw.footW+g,effH:raw.stackH+g};
+}
+function getPkgVolume() {
+  if(pkgType==='cylinder'){const d=parseFloat(document.getElementById('p_d').value)||0,h=parseFloat(document.getElementById('p_ch').value)||0;return Math.PI*(d/2)*(d/2)*h;}
+  if(pkgType==='square'){const s=parseFloat(document.getElementById('p_s').value)||0,h=parseFloat(document.getElementById('p_sh').value)||0;return s*s*h;}
+  if(pkgType==='rect'){const l=parseFloat(document.getElementById('p_l').value)||0,w=parseFloat(document.getElementById('p_w').value)||0,h=parseFloat(document.getElementById('p_rh').value)||0;return l*w*h;}
+  if(pkgType==='wedge'){const l=parseFloat(document.getElementById('p_wdl').value)||0,w=parseFloat(document.getElementById('p_wdw').value)||0,h=parseFloat(document.getElementById('p_wdh').value)||0;return 0.5*l*w*h;}
+  if(pkgType==='bag'){const l=parseFloat(document.getElementById('p_bgl').value)||0,w=parseFloat(document.getElementById('p_bgw').value)||0,h=parseFloat(document.getElementById('p_bgh').value)||0;return 0.75*l*w*h;}
+  const d=parseFloat(document.getElementById('p_sd').value)||0;return(4/3)*Math.PI*(d/2)*(d/2)*(d/2);
+}
+
+// Count formula with gap: N = floor((containerDim + gap) / (pkgDim + gap))
+function calcGrid(cl,cw,ch,p){
+  return{perL:Math.floor((cl+p.gap)/p.effL),perW:Math.floor((cw+p.gap)/p.effW),perH:Math.floor((ch+p.gap)/p.effH)};
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CALCULATE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function showErr(m){const e=document.getElementById('calc_err');e.textContent='⚠ '+m;e.style.display='block';}
+function clearErr(){document.getElementById('calc_err').style.display='none';}
+
+function calculate() {
+  clearErr();
+  const c=getContainerDims();
+  if(outputMode==='suggest'){saveState();runSuggestSize(c);return;}
+  const p=getPkgDims();
+  if(p.footL<=0||p.footW<=0||p.stackH<=0){showErr('Package dimensions must be > 0.');return;}
+  if(p.footL>c.l||p.footW>c.w||p.stackH>c.h){
+    const d=p.footL>c.l?`L ${p.footL}>${c.l}cm`:p.footW>c.w?`W ${p.footW}>${c.w}cm`:`H ${p.stackH}>${c.h}cm`;
+    showErr('Package larger than container! ('+d+')');return;
+  }
+  const{perL,perW,perH}=calcGrid(c.l,c.w,c.h,p);
+  const maxCount=perL*perW*perH;
+  if(maxCount===0){showErr('Package does not fit with these dimensions.');return;}
+
+  // Zone 2: secondary package fills remaining height above zone 1
+  let zone2=null;
+  if(pkg2Enabled){
+    const p2=getPkgDims2();
+    const z2H=c.h-perH*p.stackH;
+    if(p2.footL>0&&p2.footW>0&&p2.stackH>0&&p2.footL<=c.l&&p2.footW<=c.w&&z2H>=p2.stackH){
+      const g2=calcGrid(c.l,c.w,z2H,p2);
+      const cnt2=g2.perL*g2.perW*g2.perH;
+      if(cnt2>0) zone2={perL:g2.perL,perW:g2.perW,perH:g2.perH,p:p2,count:cnt2,zOffset:perH*p.stackH};
+    }
+  }
+
+  const cVol=c.l*c.w*c.h;
+  const pVol=getPkgVolume();
+  const usedBBox=perL*p.footL*perW*p.footW*perH*p.stackH;
+  const edgeRemVol=(cVol-usedBBox)/1e6;
+  const internalGapVol=maxCount*(p.footL*p.footW*p.stackH-pVol)/1e6;
+  const totalEmptyVol=(cVol-pVol*maxCount)/1e6;
+  const volUtil=pVol*maxCount/cVol*100;
+  const remL=c.l-perL*p.footL, remW=c.w-perW*p.footW, remH=c.h-perH*p.stackH;
+
+  const pkgWeight=parseFloat(document.getElementById('p_weight').value)||0;
+  const totalWeight=pkgWeight>0?pkgWeight*maxCount:null;
+  const payload=c.payload||null;
+
+  saveState();
+  buildComparisonTable(p, pkgWeight);
+
+  if(outputMode==='auto') {
+    renderResult({mode:'auto',maxCount,perL,perW,perH,cVol,pVol,volUtil,edgeRemVol,internalGapVol,totalEmptyVol,remL,remW,remH,totalWeight,payload,c,p,zone2});
+    lastViz=[perL,perH,perW,c,p,maxCount,maxCount,zone2];
+  } else {
+    const inputCount=parseInt(document.getElementById('pkg_count').value)||0;
+    if(inputCount<=0){showErr('Enter count ≥ 1.');return;}
+    const status=inputCount===maxCount?'full':inputCount>maxCount?'overload':'partial';
+    const fillPct=Math.min(inputCount/maxCount*100,100);
+    const twCustom=pkgWeight>0?pkgWeight*inputCount:null;
+    renderResult({mode:'custom',inputCount,maxCount,status,fillPct,perL,perW,perH,cVol,pVol,volUtil,edgeRemVol,totalEmptyVol,remL,remW,remH,totalWeight:twCustom,payload,c,p,zone2});
+    lastViz=[perL,perH,perW,c,p,inputCount,maxCount,zone2];
+  }
+  draw3D(...lastViz);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// RENDER RESULTS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function fmtN(n){return Math.round(n).toLocaleString();}
+function fmtM3(v){return v.toFixed(3);}
+
+function renderResult(r) {
+  const el=document.getElementById('rbar');
+  let h='';
+
+  const weightHtml=()=>{
+    if(!r.totalWeight) return '';
+    const over=r.payload&&r.totalWeight>r.payload;
+    const cls=over?'wt-over':'wt-ok';
+    const pct=r.payload?(r.totalWeight/r.payload*100).toFixed(1):null;
+    return `<div class="${cls} wt-warn">⚖ Total weight: <b>${fmtN(r.totalWeight)} kg</b>`+
+      (r.payload?` / ${fmtN(r.payload)} kg limit (${pct}%)`+
+        (over?` — <b>OVERWEIGHT by ${fmtN(r.totalWeight-r.payload)} kg</b>`:' ✓')
+      :'')+`</div>`;
+  };
+
+  if(r.mode==='auto') {
+    const vpct=r.volUtil.toFixed(1), bc=r.volUtil>=90?'#3fb950':r.volUtil>=60?'#f0883e':'#58a6ff';
+    h+=`<div class="stat-row">
+      <span class="badge bg-green">🎯 Max Capacity</span>
+      <div class="sb"><div class="v">${fmtN(r.maxCount)}</div><div class="l">Max packages</div></div>
+      <div class="sb"><div class="v">${vpct}%</div><div class="l">Vol util<div class="prog-w"><div class="prog-b" style="width:${Math.min(r.volUtil,100).toFixed(1)}%;background:${bc}"></div></div></div></div>
+      <div class="sb"><div class="v">${r.perL}×${r.perW}×${r.perH}</div><div class="l">Grid L×W×H</div></div>
+      <div class="sb"><div class="v" style="color:#f0883e">${fmtM3(r.totalEmptyVol)} m³</div><div class="l">Total unused</div></div>
+    </div>
+    <div class="info-line">
+      Edge strips — L: <b>${r.remL.toFixed(1)} cm</b>, W: <b>${r.remW.toFixed(1)} cm</b>, H: <b>${r.remH.toFixed(1)} cm</b> &nbsp;|&nbsp;
+      Edge leftover: <b>${fmtM3(r.edgeRemVol)} m³</b>`+
+      (pkgType==='cylinder'||pkgType==='sphere'?` &nbsp;|&nbsp; Internal gaps: <b>${fmtM3(r.internalGapVol)} m³</b>`:'')
+    +`</div>`
+    +weightHtml()
+    +(r.zone2?(()=>{const z=r.zone2,pw2=parseFloat(document.getElementById('p2_weight').value)||0,wt2=pw2>0?pw2*z.count:null;return`<div class="info-line" style="margin-top:4px;border-top:1px solid #21262d;padding-top:4px"><span class="zone2-color">⬡ Zone 2 (secondary):</span> <b>${fmtN(z.count)}</b> packages · Grid <b>${z.perL}×${z.perW}×${z.perH}</b> · Z-off <b>${(z.zOffset/100).toFixed(2)} m</b>`+(wt2?` · Wt <b>${fmtN(wt2)} kg</b>`:'')+` &nbsp;→&nbsp; <span style="color:#f0f6fc;font-weight:700">Total: ${fmtN(r.maxCount+z.count)} packages</span></div>`})():'');
+  } else {
+    const bc=r.status==='overload'?'#f85149':r.status==='full'?'#3fb950':'#f0883e';
+    const bdg=r.status==='full'?'bg-green':r.status==='overload'?'bg-red':'bg-orange';
+    const bl=r.status==='full'?'✅ Exactly Full':r.status==='overload'?'🚫 Overload':'📦 Partial';
+    h+=`<div class="stat-row">
+      <span class="badge ${bdg}">${bl}</span>
+      <div class="sb"><div class="v">${fmtN(r.inputCount)}</div><div class="l">Input</div></div>
+      <div class="sb"><div class="v">${fmtN(r.maxCount)}</div><div class="l">Max capacity</div></div>`;
+    if(r.status==='overload') h+=`<div class="sb"><div class="v" style="color:#f85149">+${fmtN(r.inputCount-r.maxCount)}</div><div class="l">Excess (need ${Math.ceil(r.inputCount/r.maxCount)}×)</div></div>`;
+    if(r.status==='partial')  h+=`<div class="sb"><div class="v" style="color:#f0883e">${fmtN(r.maxCount-r.inputCount)}</div><div class="l">Can add</div></div>`;
+    h+=`<div class="sb"><div class="v">${r.fillPct.toFixed(1)}%</div><div class="l">Fill<div class="prog-w"><div class="prog-b" style="width:${r.fillPct.toFixed(1)}%;background:${bc}"></div></div></div></div>
+      <div class="sb"><div class="v" style="color:#f0883e">${fmtM3(r.totalEmptyVol)} m³</div><div class="l">Total unused</div></div>
+    </div>
+    <div class="info-line">Edge strips — L: <b>${r.remL.toFixed(1)} cm</b>, W: <b>${r.remW.toFixed(1)} cm</b>, H: <b>${r.remH.toFixed(1)} cm</b> &nbsp;|&nbsp; Edge leftover: <b>${fmtM3(r.edgeRemVol)} m³</b></div>`
+    +weightHtml()
+    +(r.zone2?(()=>{const z=r.zone2,pw2=parseFloat(document.getElementById('p2_weight').value)||0,wt2=pw2>0?pw2*z.count:null;return`<div class="info-line" style="margin-top:4px;border-top:1px solid #21262d;padding-top:4px"><span class="zone2-color">⬡ Zone 2 (secondary):</span> <b>${fmtN(z.count)}</b> packages · Grid <b>${z.perL}×${z.perW}×${z.perH}</b>`+(wt2?` · Wt <b>${fmtN(wt2)} kg</b>`:'')+`</div>`})():'');
+  }
+  el.innerHTML=h;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// COMPARISON TABLE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function buildComparisonTable(p, pkgWeight) {
+  if(isDemo)return;
+  const curKey=document.getElementById('containerSelect').value;
+  const pVol=getPkgVolume();
+  let bestCount=0,rows=[];
+  for(const[k,c] of Object.entries(CONTAINERS)){
+    if(p.footL>c.l||p.footW>c.w||p.stackH>c.h){rows.push({k,c,count:0,vol:0,wt:0});continue;}
+    const{perL,perW,perH}=calcGrid(c.l,c.w,c.h,p);
+    const count=perL*perW*perH;
+    const vol=pVol*count/1e6;
+    const wt=pkgWeight>0?pkgWeight*count:null;
+    if(count>bestCount)bestCount=count;
+    rows.push({k,c,count,vol,wt,perL,perW,perH,volPct:(pVol*count/(c.l*c.w*c.h)*100).toFixed(1)});
+  }
+  let th=`<tr><th>Container</th><th>Packages</th><th>L×W×H grid</th><th>Vol util</th>`;
+  if(pkgWeight>0)th+=`<th>Total weight</th>`;
+  th+=`<th>Status</th></tr>`;
+  let tb='';
+  for(const r of rows){
+    const isBest=r.count===bestCount&&r.count>0;
+    const isCur=r.k===curKey;
+    const cls=(isBest&&isCur)?'best selected':isBest?'best':isCur?'selected':'';
+    const cntLabel=r.count>0?`<b>${fmtN(r.count)}</b>`:'-';
+    const gridLabel=r.perL?`${r.perL}×${r.perW}×${r.perH}`:'-';
+    const volLabel=r.volPct?`${r.volPct}%`:'-';
+    let statusLabel='';
+    if(isBest&&isCur)statusLabel='<span class="cmp-best">★ Best + Current</span>';
+    else if(isBest)statusLabel='<span class="cmp-best">★ Best fit</span>';
+    else if(isCur)statusLabel='<span class="cmp-cur">◉ Selected</span>';
+    const wtLabel=r.wt?(r.c.payload?`${fmtN(r.wt)} / ${fmtN(r.c.payload)} kg`:`${fmtN(r.wt)} kg`):'-';
+    tb+=`<tr class="${cls}"><td>${r.c.label}</td><td>${cntLabel}</td><td>${gridLabel}</td><td>${volLabel}</td>`+(pkgWeight>0?`<td>${wtLabel}</td>`:'')+`<td>${statusLabel}</td></tr>`;
+  }
+  document.getElementById('cmpTable').innerHTML=th+tb;
+  document.getElementById('cmpWrap').style.display='block';
+}
+
+function toggleCmp() {
+  cmpVisible=!cmpVisible;
+  document.getElementById('cmpTableWrap').classList.toggle('collapsed',!cmpVisible);
+  document.getElementById('cmpArrow').textContent=cmpVisible?'▼':'▶';
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 3D ISOMETRIC RENDERING
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function proj(wx,wy,wz,sc,ox,oy){
+  const az=viewAz,el=viewEl;
+  return[(-wx*Math.sin(az)+wy*Math.cos(az))*sc+ox,
+    (wx*Math.sin(el)*Math.cos(az)+wy*Math.sin(el)*Math.sin(az)-wz*Math.cos(el))*sc+oy];
+}
+function computeFit(cl,cw,ch,W,H){
+  const corners=[[0,0,0],[cl,0,0],[cl,cw,0],[0,cw,0],[0,0,ch],[cl,0,ch],[cl,cw,ch],[0,cw,ch]];
+  let mnX=1e9,mxX=-1e9,mnY=1e9,mxY=-1e9;
+  for(const[x,y,z] of corners){const[sx,sy]=proj(x,y,z,1,0,0);mnX=Math.min(mnX,sx);mxX=Math.max(mxX,sx);mnY=Math.min(mnY,sy);mxY=Math.max(mxY,sy);}
+  const PAD=30,bW=W-PAD*2,bH=H-PAD*2-8;
+  const sc=Math.min(bW/(mxX-mnX),bH/(mxY-mnY));
+  return{sc,ox:PAD+(bW-(mxX-mnX)*sc)/2-mnX*sc,oy:PAD+(bH-(mxY-mnY)*sc)/2-mnY*sc};
+}
+function face3d(ctx,pts,color,stroke){
+  ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);
+  for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i][0],pts[i][1]);
+  ctx.closePath();ctx.fillStyle=color;ctx.fill();
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=0.6;ctx.stroke();}
+}
+function drawBox3d(ctx,wx,wy,wz,fw,fd,fh,sc,ox,oy,cT,cF,cS,cSt){
+  const p=(x,y,z)=>proj(wx+x,wy+y,wz+z,sc,ox,oy);
+  const az=viewAz;
+  const[c00,c10,c11,c01,c00h,c10h,c11h,c01h]=[p(0,0,0),p(fw,0,0),p(fw,fd,0),p(0,fd,0),p(0,0,fh),p(fw,0,fh),p(fw,fd,fh),p(0,fd,fh)];
+  face3d(ctx,[c00h,c10h,c11h,c01h],cT,cSt);
+  Math.sin(az)>=0?face3d(ctx,[c01,c11,c11h,c01h],cF,cSt):face3d(ctx,[c00,c10,c10h,c00h],cF,cSt);
+  Math.cos(az)>=0?face3d(ctx,[c10,c11,c11h,c10h],cS,cSt):face3d(ctx,[c00,c01,c01h,c00h],cS,cSt);
+}
+function drawCyl3d(ctx,cx,cy,wz,r,fh,sc,ox,oy,cT,cS,cSt){
+  const p=(x,y,z)=>proj(x,y,z,sc,ox,oy);
+  const az=viewAz,sa=Math.sin(az),ca=Math.cos(az);
+  const P1b=p(cx-r*sa,cy+r*ca,wz),P2b=p(cx+r*sa,cy-r*ca,wz);
+  const P1t=p(cx-r*sa,cy+r*ca,wz+fh),P2t=p(cx+r*sa,cy-r*ca,wz+fh);
+  let grad;
+  try{grad=ctx.createLinearGradient(P1t[0],(P1t[1]+P1b[1])/2,P2t[0],(P2t[1]+P2b[1])/2);
+    const dk=cSt||'#111';grad.addColorStop(0,dk);grad.addColorStop(0.3,cS);grad.addColorStop(0.7,cS);grad.addColorStop(1,dk);}
+  catch(e){grad=cS;}
+  ctx.beginPath();ctx.moveTo(P1t[0],P1t[1]);ctx.lineTo(P2t[0],P2t[1]);ctx.lineTo(P2b[0],P2b[1]);ctx.lineTo(P1b[0],P1b[1]);
+  ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+  if(cSt){ctx.strokeStyle=cSt;ctx.lineWidth=0.5;ctx.stroke();}
+  const cnt=p(cx,cy,wz+fh);
+  const ex=[p(cx+1,cy,wz+fh)[0]-cnt[0],p(cx+1,cy,wz+fh)[1]-cnt[1]];
+  const ey=[p(cx,cy+1,wz+fh)[0]-cnt[0],p(cx,cy+1,wz+fh)[1]-cnt[1]];
+  ctx.save();ctx.setTransform(ex[0]*r,ex[1]*r,ey[0]*r,ey[1]*r,cnt[0],cnt[1]);
+  ctx.beginPath();ctx.arc(0,0,1,0,Math.PI*2);ctx.restore();
+  ctx.fillStyle=cT;ctx.fill();if(cSt){ctx.strokeStyle=cSt;ctx.lineWidth=0.5;ctx.stroke();}
+}
+function lc(h,a){const n=parseInt(h.slice(1),16);return`rgb(${Math.min(255,(n>>16)+a)},${Math.min(255,((n>>8)&255)+a)},${Math.min(255,(n&255)+a)})`;}
+function dc(h,a){const n=parseInt(h.slice(1),16);return`rgb(${Math.max(0,(n>>16)-a)},${Math.max(0,((n>>8)&255)-a)},${Math.max(0,(n&255)-a)})`;}
+function drawSphere3d(ctx,cx,cy,wz,r,sc,ox,oy,cM,cSt){
+  const cnt=proj(cx,cy,wz+r,sc,ox,oy);
+  const edg=proj(cx+r,cy,wz+r,sc,ox,oy);
+  const sR=Math.max(Math.hypot(edg[0]-cnt[0],edg[1]-cnt[1]),1);
+  const grad=ctx.createRadialGradient(cnt[0]-sR*.3,cnt[1]-sR*.3,sR*.05,cnt[0],cnt[1],sR);
+  grad.addColorStop(0,lc(cM,70));grad.addColorStop(0.5,cM);grad.addColorStop(1,dc(cM,50));
+  ctx.beginPath();ctx.arc(cnt[0],cnt[1],sR,0,Math.PI*2);ctx.fillStyle=grad;ctx.fill();
+  if(cSt){ctx.strokeStyle=cSt;ctx.lineWidth=0.5;ctx.stroke();}
+}
+function drawCylXaxis(ctx,wx,wy_c,wz_c,r,flen,sc,ox,oy,cT,cS,cSt){
+  // Cylinder with axis along X: from x=wx to x=wx+flen, circle in YZ plane
+  const p=(x,y,z)=>proj(x,y,z,sc,ox,oy);
+  const el=viewEl,az=viewAz;
+  // Screen-Y silhouette of YZ circle: dsy/d_alpha=0 => tan(alpha)=-cos(el)/(sin(el)*sin(az))
+  const alpha=Math.atan2(-Math.cos(el),Math.sin(el)*Math.sin(az));
+  const dy=r*Math.cos(alpha),dz=r*Math.sin(alpha);
+  const[lx1,ly1]=p(wx,      wy_c+dy,wz_c+dz),[lx2,ly2]=p(wx,      wy_c-dy,wz_c-dz);
+  const[rx1,ry1]=p(wx+flen, wy_c+dy,wz_c+dz),[rx2,ry2]=p(wx+flen, wy_c-dy,wz_c-dz);
+  let grad;
+  try{grad=ctx.createLinearGradient(lx1,ly1,lx2,ly2);
+    const dk=cSt||'#111';grad.addColorStop(0,dk);grad.addColorStop(0.3,cS);grad.addColorStop(0.7,cS);grad.addColorStop(1,dk);}
+  catch(e){grad=cS;}
+  ctx.beginPath();ctx.moveTo(lx1,ly1);ctx.lineTo(rx1,ry1);ctx.lineTo(rx2,ry2);ctx.lineTo(lx2,ly2);
+  ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+  if(cSt){ctx.strokeStyle=cSt;ctx.lineWidth=0.5;ctx.stroke();}
+  // End cap ellipse (circle in YZ plane)
+  const xCap=Math.cos(az)>=0?wx+flen:wx;
+  const cnt=p(xCap,wy_c,wz_c);
+  const ey=[p(xCap,wy_c+r,wz_c)[0]-cnt[0],p(xCap,wy_c+r,wz_c)[1]-cnt[1]];
+  const ez=[p(xCap,wy_c,wz_c+r)[0]-cnt[0],p(xCap,wy_c,wz_c+r)[1]-cnt[1]];
+  ctx.save();ctx.setTransform(ey[0],ey[1],ez[0],ez[1],cnt[0],cnt[1]);
+  ctx.beginPath();ctx.arc(0,0,1,0,Math.PI*2);ctx.restore();
+  ctx.fillStyle=cT;ctx.fill();if(cSt){ctx.strokeStyle=cSt;ctx.lineWidth=0.5;ctx.stroke();}
+}
+function drawCylYaxis(ctx,wx_c,wy,wz_c,r,flen,sc,ox,oy,cT,cS,cSt){
+  // Cylinder with axis along Y: from y=wy to y=wy+flen, circle in XZ plane
+  const p=(x,y,z)=>proj(x,y,z,sc,ox,oy);
+  const el=viewEl,az=viewAz;
+  // Screen-Y silhouette of XZ circle: tan(alpha)=-cos(el)/(sin(el)*cos(az))
+  const alpha=Math.atan2(-Math.cos(el),Math.sin(el)*Math.cos(az));
+  const dx=r*Math.cos(alpha),dz=r*Math.sin(alpha);
+  const[fx1,fy1]=p(wx_c+dx,wy,      wz_c+dz),[fx2,fy2]=p(wx_c-dx,wy,      wz_c-dz);
+  const[bx1,by1]=p(wx_c+dx,wy+flen, wz_c+dz),[bx2,by2]=p(wx_c-dx,wy+flen, wz_c-dz);
+  let grad;
+  try{grad=ctx.createLinearGradient(fx1,fy1,fx2,fy2);
+    const dk=cSt||'#111';grad.addColorStop(0,dk);grad.addColorStop(0.3,cS);grad.addColorStop(0.7,cS);grad.addColorStop(1,dk);}
+  catch(e){grad=cS;}
+  ctx.beginPath();ctx.moveTo(fx1,fy1);ctx.lineTo(bx1,by1);ctx.lineTo(bx2,by2);ctx.lineTo(fx2,fy2);
+  ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+  if(cSt){ctx.strokeStyle=cSt;ctx.lineWidth=0.5;ctx.stroke();}
+  // End cap ellipse (circle in XZ plane)
+  const yCap=Math.sin(az)>=0?wy+flen:wy;
+  const cnt=p(wx_c,yCap,wz_c);
+  const ex=[p(wx_c+r,yCap,wz_c)[0]-cnt[0],p(wx_c+r,yCap,wz_c)[1]-cnt[1]];
+  const ez=[p(wx_c,yCap,wz_c+r)[0]-cnt[0],p(wx_c,yCap,wz_c+r)[1]-cnt[1]];
+  ctx.save();ctx.setTransform(ex[0],ex[1],ez[0],ez[1],cnt[0],cnt[1]);
+  ctx.beginPath();ctx.arc(0,0,1,0,Math.PI*2);ctx.restore();
+  ctx.fillStyle=cT;ctx.fill();if(cSt){ctx.strokeStyle=cSt;ctx.lineWidth=0.5;ctx.stroke();}
+}
+function drawWedge3d(ctx,wx,wy,wz,fw,fd,fh,sc,ox,oy,cT,cF,cS,cSt){
+  const p=(x,y,z)=>proj(wx+x,wy+y,wz+z,sc,ox,oy);
+  const az=viewAz;
+  // Bottom face
+  face3d(ctx,[p(0,0,0),p(fw,0,0),p(fw,fd,0),p(0,fd,0)],'rgba(15,15,20,0.7)',cSt);
+  // Slanted top: from high edge (x=0,z=fh) to low edge (x=fw,z=0)
+  face3d(ctx,[p(0,0,fh),p(fw,0,0),p(fw,fd,0),p(0,fd,fh)],cT,cSt);
+  // Left vertical face (x=0) — visible when cos(az)<0
+  if(Math.cos(az)<0)face3d(ctx,[p(0,0,0),p(0,fd,0),p(0,fd,fh),p(0,0,fh)],cS,cSt);
+  // Side triangles — y=0 (front) or y=fd (back) depending on viewpoint
+  if(Math.sin(az)>=0){face3d(ctx,[p(0,fd,0),p(fw,fd,0),p(0,fd,fh)],cF,cSt);}
+  else{face3d(ctx,[p(0,0,0),p(fw,0,0),p(0,0,fh)],cF,cSt);}
+}
+function drawBag3d(ctx,wx,wy,wz,fw,fd,fh,sc,ox,oy,cT,cF,cS,cSt){
+  drawBox3d(ctx,wx,wy,wz,fw,fd,fh,sc,ox,oy,cT,cF,cS,cSt);
+  // Cinch/tie line at 88% height
+  const tz=wz+fh*0.88;
+  const pj=(x,y,z)=>proj(x,y,z,sc,ox,oy);
+  ctx.save();ctx.strokeStyle='rgba(0,0,0,0.55)';ctx.lineWidth=1.8;
+  const[ax,ay]=pj(wx,wy,tz),[bx,by]=pj(wx+fw,wy,tz),[cx2,cy2]=pj(wx+fw,wy+fd,tz),[dx,dy]=pj(wx,wy+fd,tz);
+  ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.lineTo(cx2,cy2);ctx.lineTo(dx,dy);ctx.closePath();ctx.stroke();ctx.restore();
+}
+function drawDoor(ctx,cl,cw,ch,sc,ox,oy){
+  const p=(x,y,z)=>proj(x,y,z,sc,ox,oy);
+  const az=viewAz;
+  // Door at x=cl face — only draw when it faces the viewer
+  if(Math.cos(az)<0)return;
+  const inset=Math.max(cw*0.02,0.5),mid=cw/2;
+  const panelClr='rgba(130,95,45,0.78)';
+  const lineClr='rgba(70,48,15,0.9)';
+  // Left panel
+  face3d(ctx,[p(cl,inset,0),p(cl,mid,0),p(cl,mid,ch),p(cl,inset,ch)],panelClr,lineClr);
+  // Right panel
+  face3d(ctx,[p(cl,mid,0),p(cl,cw-inset,0),p(cl,cw-inset,ch),p(cl,mid,ch)],panelClr,lineClr);
+  // Centre split line
+  const[dx,dy]=p(cl,mid,0),[ex,ey]=p(cl,mid,ch);
+  ctx.strokeStyle=lineClr;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(dx,dy);ctx.lineTo(ex,ey);ctx.stroke();
+  // Handles
+  const[hx1,hy1]=p(cl,mid-cw*0.04,ch*0.48),[hx2,hy2]=p(cl,mid+cw*0.04,ch*0.48);
+  ctx.fillStyle='rgba(200,155,50,0.95)';
+  ctx.beginPath();ctx.arc(hx1,hy1,2.5,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(hx2,hy2,2.5,0,Math.PI*2);ctx.fill();
+}
+function drawAxisArrows(ctx,cl,cw,ch,sc,ox,oy){
+  const p=(x,y,z)=>proj(x,y,z,sc,ox,oy);
+  const len=Math.min(cl,cw,ch)*0.35;
+  const[ox_,oy_]=p(0,0,0);
+  const arrow=(tx,ty,color,label)=>{
+    ctx.strokeStyle=color;ctx.lineWidth=4;
+    ctx.beginPath();ctx.moveTo(ox_,oy_);ctx.lineTo(tx,ty);ctx.stroke();
+    const ang=Math.atan2(ty-oy_,tx-ox_);
+    ctx.fillStyle=color;
+    ctx.beginPath();ctx.moveTo(tx,ty);
+    ctx.lineTo(tx-16*Math.cos(ang-0.42),ty-16*Math.sin(ang-0.42));
+    ctx.lineTo(tx-16*Math.cos(ang+0.42),ty-16*Math.sin(ang+0.42));
+    ctx.closePath();ctx.fill();
+    ctx.font='bold 18px Segoe UI';ctx.textAlign='center';ctx.fillStyle=color;
+    ctx.fillText(label,tx+(tx-ox_)*0.3,ty+(ty-oy_)*0.3);
+  };
+  const[xx,xy]=p(len,0,0);arrow(xx,xy,'#f85149','X');
+  const[yx,yy]=p(0,len,0);arrow(yx,yy,'#f0883e','Y');
+  const[zx,zy]=p(0,0,len);arrow(zx,zy,'#388bfd','Z');
+}
+function drawWire(ctx,cl,cw,ch,sc,ox,oy){
+  const p=(x,y,z)=>proj(x,y,z,sc,ox,oy);
+  const E=[[[0,0,0],[cl,0,0]],[[cl,0,0],[cl,cw,0]],[[cl,cw,0],[0,cw,0]],[[0,cw,0],[0,0,0]],
+    [[0,0,ch],[cl,0,ch]],[[cl,0,ch],[cl,cw,ch]],[[cl,cw,ch],[0,cw,ch]],[[0,cw,ch],[0,0,ch]],
+    [[0,0,0],[0,0,ch]],[[cl,0,0],[cl,0,ch]],[[cl,cw,0],[cl,cw,ch]],[[0,cw,0],[0,cw,ch]]];
+  ctx.strokeStyle='rgba(56,139,253,0.8)';ctx.lineWidth=1.5;
+  for(const[[x1,y1,z1],[x2,y2,z2]] of E){
+    const[a,b]=p(x1,y1,z1),[c,d]=p(x2,y2,z2);ctx.beginPath();ctx.moveTo(a,b);ctx.lineTo(c,d);ctx.stroke();}
+}
+function drawRemSpace(ctx,perL,perW,perH,c,p,sc,ox,oy,totalUsedH=null){
+  const uL=perL*p.footL,uW=perW*p.footW;
+  const uH=totalUsedH!==null?totalUsedH:perH*p.stackH;
+  const boxes=[];
+  if(c.h-uH>0.5)boxes.push([0,0,uH,c.l,c.w,c.h-uH]);
+  if(c.l-uL>0.5&&uH>0)boxes.push([uL,0,0,c.l-uL,c.w,uH]);
+  if(c.w-uW>0.5&&uH>0&&uL>0)boxes.push([0,uW,0,uL,c.w-uW,uH]);
+  for(const[wx,wy,wz,fw,fd,fh] of boxes){
+    if(fw>0&&fd>0&&fh>0)
+      drawBox3d(ctx,wx,wy,wz,fw,fd,fh,sc,ox,oy,'rgba(56,139,253,0.12)','rgba(56,139,253,0.08)','rgba(56,139,253,0.06)','rgba(56,139,253,0.35)');
+  }
+}
+function mkR(a,b,s){const r=[];for(let i=a;s>0?i<=b:i>=b;i+=s)r.push(i);return r;}
+
+function draw3D(perL,perH,perW,c,p,actualCount,maxCount,zone2=null){
+  const canvas=document.getElementById('viz3d');
+  const wrap=document.getElementById('canvasWrap');
+  const W=wrap.offsetWidth||800,H=wrap.offsetHeight||500;
+  canvas.width=W;canvas.height=H;
+  const ctx=canvas.getContext('2d');
+  ctx.fillStyle='#0d1117';ctx.fillRect(0,0,W,H);
+  const{sc,ox,oy}=computeFit(c.l,c.w,c.h,W,H);
+  const az=viewAz,cosAz=Math.cos(az),sinAz=Math.sin(az);
+  const xR=cosAz>=0?mkR(0,perL-1,1):mkR(perL-1,0,-1);
+  const yR=sinAz>=0?mkR(0,perW-1,1):mkR(perW-1,0,-1);
+  const zR=mkR(0,perH-1,1);
+  const MAX=isDemo?200:8000;let count=0,drawn=0;
+  const isCyl=pkgType==='cylinder',isSph=pkgType==='sphere',isWedge=pkgType==='wedge',isBag=pkgType==='bag';
+  for(const iz of zR)for(const iy of yR)for(const ix of xR){
+    if(drawn>=MAX){count++;continue;}
+    if(count>=actualCount){count++;continue;}
+    const over=count>=maxCount;
+    const wx=ix*p.footL,wy=iy*p.footW,wz=iz*p.stackH;
+    let cT,cF,cS,cSt;
+    if(over){cT='#f8808a';cF='#f85149';cS='#c0302a';cSt='rgba(200,40,30,0.4)';}
+    else    {cT='#56d68a';cF='#3fb950';cS='#278a36';cSt='rgba(40,160,70,0.3)';}
+    if(isCyl){
+      if(orientation==='z')drawCyl3d(ctx,wx+p.footL/2,wy+p.footW/2,wz,p.footL/2,p.stackH,sc,ox,oy,cT,cF,cSt);
+      else if(orientation==='x')drawCylXaxis(ctx,wx,wy+p.footW/2,wz+p.stackH/2,p.footW/2,p.footL,sc,ox,oy,cT,cF,cSt);
+      else drawCylYaxis(ctx,wx+p.footL/2,wy,wz+p.stackH/2,p.footL/2,p.footW,sc,ox,oy,cT,cF,cSt);
+    }
+    else if(isSph)  drawSphere3d(ctx,wx+p.footL/2,wy+p.footW/2,wz,p.footL/2,sc,ox,oy,cF,cSt);
+    else if(isWedge)drawWedge3d(ctx,wx,wy,wz,p.footL,p.footW,p.stackH,sc,ox,oy,cT,cF,cS,cSt);
+    else if(isBag)  drawBag3d(ctx,wx,wy,wz,p.footL,p.footW,p.stackH,sc,ox,oy,cT,cF,cS,cSt);
+    else            drawBox3d(ctx,wx,wy,wz,p.footL,p.footW,p.stackH,sc,ox,oy,cT,cF,cS,cSt);
+    drawn++;count++;
+  }
+  // Zone 2 (secondary packages)
+  if(zone2){
+    const{perL:pL2,perH:pH2,perW:pW2,p:p2,count:cnt2,zOffset}=zone2;
+    const xR2=cosAz>=0?mkR(0,pL2-1,1):mkR(pL2-1,0,-1);
+    const yR2=sinAz>=0?mkR(0,pW2-1,1):mkR(pW2-1,0,-1);
+    const isCyl2=pkg2Type==='cylinder',isSph2=pkg2Type==='sphere';
+    let cnt2drawn=0,cnt2iter=0;
+    for(const iz of mkR(0,pH2-1,1))for(const iy of yR2)for(const ix of xR2){
+      if(cnt2drawn>=MAX||cnt2iter>=cnt2){cnt2iter++;continue;}
+      const wx=ix*p2.footL,wy=iy*p2.footW,wz=zOffset+iz*p2.stackH;
+      if(isCyl2)     drawCyl3d(ctx,wx+p2.footL/2,wy+p2.footW/2,wz,p2.footL/2,p2.stackH,sc,ox,oy,'#72e5c0','#4ecca3','rgba(78,204,163,0.35)');
+      else if(isSph2)drawSphere3d(ctx,wx+p2.footL/2,wy+p2.footW/2,wz,p2.footL/2,sc,ox,oy,'#4ecca3','rgba(78,204,163,0.35)');
+      else           drawBox3d(ctx,wx,wy,wz,p2.footL,p2.footW,p2.stackH,sc,ox,oy,'#72e5c0','#4ecca3','#2a8a6a','rgba(78,204,163,0.35)');
+      cnt2drawn++;cnt2iter++;
+    }
+  }
+  const totalUsedH=zone2?zone2.zOffset+zone2.perH*zone2.p.stackH:null;
+  drawRemSpace(ctx,perL,perW,perH,c,p,sc,ox,oy,totalUsedH);
+  drawWire(ctx,c.l,c.w,c.h,sc,ox,oy);
+  drawDoor(ctx,c.l,c.w,c.h,sc,ox,oy);
+  drawAxisArrows(ctx,c.l,c.w,c.h,sc,ox,oy);
+  if(isDemo){
+    ctx.save();ctx.translate(W/2,H/2);ctx.rotate(-Math.PI/7);
+    ctx.font='bold 68px Segoe UI';ctx.textAlign='center';ctx.globalAlpha=0.10;
+    ctx.fillStyle='#f0883e';ctx.fillText('DEMO',0,0);
+    ctx.globalAlpha=0.06;ctx.fillText('DEMO',0,72);ctx.restore();
+  }
+  ctx.fillStyle='#6e7681';ctx.font='10px Segoe UI';ctx.textAlign='left';
+  ctx.fillText(`Grid ${perL}×${perW}×${perH} | Az ${Math.round(az*180/Math.PI)}° | Drag to rotate`,8,H-8);
+  if(drawn>=MAX){ctx.fillStyle='#f0883e';ctx.textAlign='center';ctx.fillText(`Large dataset — showing ${MAX.toLocaleString()} of ${(perL*perW*perH).toLocaleString()} packages`,W/2,H-8);}
+  // Update legend dynamically
+  const leg=document.getElementById('legend3d');leg.style.display='flex';
+  leg.innerHTML=`<div class="leg-item"><div class="leg-dot" style="background:#3fb950"></div>${zone2?'Zone 1 (primary)':'Loaded'}</div>`
+    +(zone2?`<div class="leg-item"><div class="leg-dot" style="background:#4ecca3"></div>Zone 2 (secondary)</div>`:'')+
+    `<div class="leg-item"><div class="leg-dot" style="background:#f85149"></div>Overload</div>`+
+    `<div class="leg-item"><div class="leg-dot" style="background:rgba(56,139,253,0.3);border:1px solid #388bfd"></div>Unused space</div>`;
+}
+function drawEmpty3D(){
+  const canvas=document.getElementById('viz3d');
+  const wrap=document.getElementById('canvasWrap');
+  const W=wrap.offsetWidth||800,H=wrap.offsetHeight||500;
+  canvas.width=W;canvas.height=H;
+  const ctx=canvas.getContext('2d');
+  ctx.fillStyle='#0d1117';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#30363d';ctx.font='13px Segoe UI';ctx.textAlign='center';
+  ctx.fillText('Press ⚡ Calculate to see 3D layout',W/2,H/2-8);
+  ctx.font='11px Segoe UI';ctx.fillStyle='#484f58';
+  ctx.fillText('Drag canvas to rotate · Blue = unused space',W/2,H/2+12);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ROTATION
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function rotateAz(d){viewAz=(viewAz+d+Math.PI*4)%(Math.PI*2);updateViewLabel();if(lastViz)draw3D(...lastViz);else drawEmpty3D();saveState();}
+function setPreset(deg){viewAz=deg*Math.PI/180;updateViewLabel();if(lastViz)draw3D(...lastViz);else drawEmpty3D();saveState();}
+function onElevChange(){viewEl=parseInt(document.getElementById('elevSlider').value)*Math.PI/180;updateViewLabel();if(lastViz)draw3D(...lastViz);else drawEmpty3D();saveState();}
+function updateViewLabel(){
+  document.getElementById('viewLbl').textContent=`Az ${Math.round(viewAz*180/Math.PI)}°`;
+  ['NE','NW','SW','SE'].forEach((v,i)=>{const d=[45,135,225,315][i];document.getElementById('v'+v).classList.toggle('active',Math.abs(((viewAz*180/Math.PI)%360+360)%360-d)<10);});
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DRAG TO ROTATE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function initDrag(){
+  const canvas=document.getElementById('viz3d');
+  let drag=false,sx=0,saz=0;
+  const dn=e=>{drag=true;sx=(e.clientX||(e.touches&&e.touches[0].clientX))||0;saz=viewAz;};
+  const mv=e=>{
+    if(!drag)return;
+    const x=(e.clientX||(e.touches&&e.touches[0].clientX))||0;
+    viewAz=(saz-(x-sx)*0.008+Math.PI*4)%(Math.PI*2);
+    updateViewLabel();if(lastViz)draw3D(...lastViz);else drawEmpty3D();
+    e.preventDefault();
+  };
+  const up=()=>{if(drag){drag=false;saveState();}};
+  canvas.addEventListener('mousedown',dn);window.addEventListener('mousemove',mv);window.addEventListener('mouseup',up);
+  canvas.addEventListener('touchstart',dn,{passive:false});canvas.addEventListener('touchmove',mv,{passive:false});canvas.addEventListener('touchend',up);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CUSTOM PRESETS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const LS_CUSTOM='cpc_custom_shapes';
+function getCustomPresets(){try{return JSON.parse(localStorage.getItem(LS_CUSTOM)||'[]');}catch(e){return[];}}
+function saveCustomPresetsLS(arr){localStorage.setItem(LS_CUSTOM,JSON.stringify(arr));}
+
+function getCurrentDimsObj(){
+  if(pkgType==='cylinder')return{type:'cylinder',d:parseFloat(document.getElementById('p_d').value)||0,h:parseFloat(document.getElementById('p_ch').value)||0};
+  if(pkgType==='square')return{type:'square',s:parseFloat(document.getElementById('p_s').value)||0,h:parseFloat(document.getElementById('p_sh').value)||0};
+  if(pkgType==='rect')return{type:'rect',l:parseFloat(document.getElementById('p_l').value)||0,w:parseFloat(document.getElementById('p_w').value)||0,h:parseFloat(document.getElementById('p_rh').value)||0};
+  if(pkgType==='wedge')return{type:'wedge',l:parseFloat(document.getElementById('p_wdl').value)||0,w:parseFloat(document.getElementById('p_wdw').value)||0,h:parseFloat(document.getElementById('p_wdh').value)||0};
+  if(pkgType==='bag')return{type:'bag',l:parseFloat(document.getElementById('p_bgl').value)||0,w:parseFloat(document.getElementById('p_bgw').value)||0,h:parseFloat(document.getElementById('p_bgh').value)||0};
+  return{type:'sphere',d:parseFloat(document.getElementById('p_sd').value)||0};
+}
+
+function saveCustomPreset(){
+  const name=(document.getElementById('presetNameInput').value||'').trim();
+  if(!name){alert('Enter a preset name.');return;}
+  const dims=getCurrentDimsObj();
+  const arr=getCustomPresets();
+  arr.push({id:Date.now(),name,dims});
+  saveCustomPresetsLS(arr);
+  document.getElementById('presetNameInput').value='';
+  refreshCustomPresetsDropdown();
+}
+
+function deleteCustomPreset(id){
+  saveCustomPresetsLS(getCustomPresets().filter(p=>p.id!==id));
+  refreshCustomPresetsDropdown();
+  const sel=document.getElementById('shapeSelect');
+  if(sel&&sel.value==='custom_'+id){setType(pkgType);}
+}
+
+function applyCustomPreset(id){
+  const preset=getCustomPresets().find(p=>p.id===id);
+  if(!preset)return;
+  const d=preset.dims;
+  pkgType=d.type;
+  ['cylinder','square','rect','sphere','wedge','bag'].forEach(t=>{
+    const el=document.getElementById('inputs_'+t);
+    if(el)el.style.display=t===d.type?'block':'none';
+  });
+  const sel=document.getElementById('shapeSelect');
+  if(sel)sel.value='custom_'+id;
+  if(d.type==='cylinder'){document.getElementById('p_d').value=d.d;document.getElementById('p_ch').value=d.h;}
+  else if(d.type==='square'){document.getElementById('p_s').value=d.s;document.getElementById('p_sh').value=d.h;}
+  else if(d.type==='rect'){document.getElementById('p_l').value=d.l;document.getElementById('p_w').value=d.w;document.getElementById('p_rh').value=d.h;}
+  else if(d.type==='wedge'){document.getElementById('p_wdl').value=d.l;document.getElementById('p_wdw').value=d.w;document.getElementById('p_wdh').value=d.h;}
+  else if(d.type==='bag'){document.getElementById('p_bgl').value=d.l;document.getElementById('p_bgw').value=d.w;document.getElementById('p_bgh').value=d.h;}
+  else{document.getElementById('p_sd').value=d.d;}
+  renderPresets();
+}
+
+function refreshCustomPresetsDropdown(){
+  const arr=getCustomPresets();
+  const og=document.getElementById('customPresetsOptgroup');
+  const chips=document.getElementById('customPresetChips');
+  og.style.display=arr.length?'':'none';
+  og.innerHTML=arr.map(p=>`<option value="custom_${p.id}">${p.name} (${p.dims.type})</option>`).join('');
+  chips.innerHTML=arr.map(p=>`<span class="chip" onclick="applyCustomPreset(${p.id})" title="${p.dims.type}">${p.name} <span onclick="event.stopPropagation();deleteCustomPreset(${p.id})" style="color:#f85149;margin-left:3px;cursor:pointer" title="Delete">×</span></span>`).join('');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SECONDARY PACKAGE (MIXED LOAD)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function togglePkg2(){
+  if(isDemo){alert('⬡ Mixed Load is a full-version feature.\nContact hovanphapbk@gmail.com for a license.');return;}
+  pkg2Enabled=!pkg2Enabled;
+  document.getElementById('pkg2Body').style.display=pkg2Enabled?'block':'none';
+  const badge=document.getElementById('pkg2Badge');
+  badge.textContent=pkg2Enabled?'ON':'OFF';
+  badge.className='pkg2-badge '+(pkg2Enabled?'pkg2-on':'pkg2-off');
+}
+function setType2(type){
+  pkg2Type=type;
+  ['cylinder','square','rect','sphere'].forEach(t=>{
+    document.getElementById('inputs2_'+t).style.display=t===type?'block':'none';
+    document.getElementById('btn2_'+t).classList.toggle('ab',t===type);
+  });
+}
+function getPkgDims2(){
+  const g=(parseFloat(document.getElementById('p2_gap').value)||0)/10;
+  let raw;
+  if(pkg2Type==='cylinder'){const d=parseFloat(document.getElementById('p2_d').value)||0,h=parseFloat(document.getElementById('p2_ch').value)||0;raw={footL:d,footW:d,stackH:h};}
+  else if(pkg2Type==='square'){const s=parseFloat(document.getElementById('p2_s').value)||0,h=parseFloat(document.getElementById('p2_sh').value)||0;raw={footL:s,footW:s,stackH:h};}
+  else if(pkg2Type==='rect'){const l=parseFloat(document.getElementById('p2_l').value)||0,w=parseFloat(document.getElementById('p2_w').value)||0,h=parseFloat(document.getElementById('p2_rh').value)||0;raw={footL:l,footW:w,stackH:h};}
+  else{const d=parseFloat(document.getElementById('p2_sd').value)||0;raw={footL:d,footW:d,stackH:d};}
+  return{...raw,gap:g,effL:raw.footL+g,effW:raw.footW+g,effH:raw.stackH+g};
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SUGGEST SIZE MODE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function runSuggestSize(c){
+  const target=parseInt(document.getElementById('sug_target').value)||0;
+  const gap=getGapCm();
+  const results=[];
+  const seen=new Set();
+
+  function tryDims(footL,footW,stackH,mkRow){
+    const g=gap;
+    const perL=Math.floor((c.l+g)/(footL+g));
+    const perW=Math.floor((c.w+g)/(footW+g));
+    const perH=Math.floor((c.h+g)/(stackH+g));
+    const count=perL*perW*perH;
+    if(count===0)return;
+    const key=`${perL}-${perW}-${perH}`;
+    if(!seen.has(key)){seen.add(key);results.push(mkRow(perL,perW,perH,count));}
+  }
+
+  if(pkgType==='cylinder'){
+    const maxD=Math.floor(Math.min(c.l,c.w)),maxH=Math.floor(c.h);
+    for(let d=1;d<=maxD;d++)for(let h=1;h<=maxH;h++){
+      const vol=Math.PI*(d/2)*(d/2)*h;
+      tryDims(d,d,h,(pL,pW,pH,cnt)=>({d,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+    }
+  } else if(pkgType==='square'){
+    const maxS=Math.floor(Math.min(c.l,c.w)),maxH=Math.floor(c.h);
+    for(let s=1;s<=maxS;s++)for(let h=1;h<=maxH;h++){
+      const vol=s*s*h;
+      tryDims(s,s,h,(pL,pW,pH,cnt)=>({s,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+    }
+  } else if(pkgType==='rect'){
+    const step=5;
+    for(let l=step;l<=c.l;l+=step)for(let w=step;w<=c.w;w+=step)for(let h=step;h<=c.h;h+=step){
+      const vol=l*w*h;
+      tryDims(l,w,h,(pL,pW,pH,cnt)=>({l,w,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+    }
+  } else if(pkgType==='wedge'){
+    const step=5;
+    for(let l=step;l<=c.l;l+=step)for(let w=step;w<=c.w;w+=step)for(let h=step;h<=c.h;h+=step){
+      const vol=0.5*l*w*h;
+      tryDims(l,w,h,(pL,pW,pH,cnt)=>({l,w,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+    }
+  } else if(pkgType==='bag'){
+    const step=5;
+    for(let l=step;l<=c.l;l+=step)for(let w=step;w<=c.w;w+=step)for(let h=step;h<=c.h;h+=step){
+      const vol=0.75*l*w*h;
+      tryDims(l,w,h,(pL,pW,pH,cnt)=>({l,w,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+    }
+  } else { // sphere
+    const maxD=Math.floor(Math.min(c.l,c.w,c.h));
+    for(let d=1;d<=maxD;d++){
+      const vol=(4/3)*Math.PI*(d/2)*(d/2)*(d/2);
+      tryDims(d,d,d,(pL,pW,pH,cnt)=>({d,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+    }
+  }
+
+  if(target>0){
+    results.sort((a,b)=>Math.abs(a.count-target)-Math.abs(b.count-target)||b.util-a.util);
+  } else {
+    results.sort((a,b)=>b.util-a.util);
+  }
+  renderSuggest(results.slice(0,15),target,c);
+}
+
+function renderSuggest(rows,target,c){
+  const el=document.getElementById('rbar');
+  if(!rows.length){el.innerHTML='<div class="err">⚠ No valid packages found.</div>';return;}
+  const contLabel=document.getElementById('containerSelect').options[document.getElementById('containerSelect').selectedIndex].text.split('—')[0].trim();
+  let h=`<div style="margin-bottom:5px;font-size:0.75rem;color:#8b949e">💡 <b style="color:#c9d1d9">Top ${rows.length} package sizes</b> — ${pkgType} · ${contLabel}`+(target>0?` · target: <b>${target}</b>`:' · sorted by vol%')+` &nbsp;<span style="font-size:0.67rem">(click Apply to preview in 3D)</span></div>`;
+  h+=`<div style="overflow-x:auto"><table class="sug-table"><thead><tr>`;
+  if(pkgType==='cylinder')h+=`<th>⌀ cm</th><th>H cm</th>`;
+  else if(pkgType==='square')h+=`<th>Side cm</th><th>H cm</th>`;
+  else if(pkgType==='rect'||pkgType==='wedge'||pkgType==='bag')h+=`<th>L cm</th><th>W cm</th><th>H cm</th>`;
+  else h+=`<th>⌀ cm</th>`;
+  h+=`<th>Count</th><th>Grid</th><th>Vol%</th>`;
+  if(target>0)h+=`<th>Δ</th>`;
+  h+=`<th></th></tr></thead><tbody>`;
+  rows.forEach((r,i)=>{
+    const isExact=target>0&&r.count===target;
+    const cls=isExact?'s-exact':i===0?'s-best':'';
+    const delta=target>0?(r.count>target?`<span class="match-over">+${r.count-target}</span>`:r.count<target?`<span class="match-under">-${target-r.count}</span>`:`<span class="match-exact">=</span>`):'';
+    let dims='',applyArgs='';
+    if(pkgType==='cylinder'){dims=`<td>${r.d}</td><td>${r.h}</td>`;applyArgs=`${r.d},${r.h}`;}
+    else if(pkgType==='square'){dims=`<td>${r.s}</td><td>${r.h}</td>`;applyArgs=`${r.s},${r.h}`;}
+    else if(pkgType==='rect'||pkgType==='wedge'||pkgType==='bag'){dims=`<td>${r.l}</td><td>${r.w}</td><td>${r.h}</td>`;applyArgs=`${r.l},${r.w},${r.h}`;}
+    else{dims=`<td>${r.d}</td>`;applyArgs=`${r.d}`;}
+    h+=`<tr class="${cls}">${dims}<td><b>${r.count.toLocaleString()}</b></td><td>${r.perL}×${r.perW}×${r.perH}</td><td>${r.util.toFixed(1)}%</td>`;
+    if(target>0)h+=`<td>${delta}</td>`;
+    h+=`<td><button class="apply-btn" onclick="applySuggestion(${applyArgs})">Apply</button></td></tr>`;
+  });
+  h+=`</tbody></table></div>`;
+  el.innerHTML=h;
+}
+
+function applySuggestion(...dims){
+  if(pkgType==='cylinder'){document.getElementById('p_d').value=dims[0];document.getElementById('p_ch').value=dims[1];}
+  else if(pkgType==='square'){document.getElementById('p_s').value=dims[0];document.getElementById('p_sh').value=dims[1];}
+  else if(pkgType==='rect'){document.getElementById('p_l').value=dims[0];document.getElementById('p_w').value=dims[1];document.getElementById('p_rh').value=dims[2];}
+  else if(pkgType==='wedge'){document.getElementById('p_wdl').value=dims[0];document.getElementById('p_wdw').value=dims[1];document.getElementById('p_wdh').value=dims[2];}
+  else if(pkgType==='bag'){document.getElementById('p_bgl').value=dims[0];document.getElementById('p_bgw').value=dims[1];document.getElementById('p_bgh').value=dims[2];}
+  else{document.getElementById('p_sd').value=dims[0];}
+  setMode('auto');
+  calculate();
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BOOT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+setupAdminAccess();
+if(!checkStoredLicense()){
+  // Show lock screen (already visible by default)
+}
+</script>
+</body>
+</html>
