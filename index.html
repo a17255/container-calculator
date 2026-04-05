@@ -190,7 +190,34 @@ input[type=range]{width:65px;accent-color:#58a6ff}
   #app .left{border:none;overflow:visible}
   .rbar{background:white;color:black;border:1px solid #ccc}
 }
-@media(max-width:820px){.main{grid-template-columns:1fr}}
+
+/* ── Mobile tab bar ── */
+.mob-tabs{display:none}
+@media(max-width:700px){
+  body,#app{height:100dvh;overflow:hidden}
+  #app{padding-bottom:54px}
+  .main{grid-template-columns:1fr!important;flex:1;overflow:hidden;height:100%}
+  /* Hide inactive panel via tab state */
+  .main.tab-setup .right{display:none!important}
+  .main.tab-3d .left{display:none!important}
+  /* 3D panel fills full height */
+  .main.tab-3d .right{flex:1;overflow:hidden;height:100%}
+  .main.tab-3d .viz-card{flex:1;padding:5px 6px 0}
+  .main.tab-3d .rbar{padding:6px 10px;font-size:0.72rem}
+  .main.tab-3d .cmp-wrap{display:none!important}
+  /* Setup panel scrolls */
+  .main.tab-setup .left{overflow-y:auto;height:100%;padding-bottom:6px}
+  /* Compact header on mobile */
+  .hdr h1{font-size:0.95rem}
+  .hdr p{display:none}
+  .hdr{padding:7px 12px;gap:8px}
+  /* Tab bar */
+  .mob-tabs{display:flex;position:fixed;bottom:0;left:0;right:0;height:54px;background:#161b22;border-top:1px solid #30363d;z-index:100}
+  .mob-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:none;border:none;color:#6e7681;cursor:pointer;font-size:0.65rem;font-family:inherit;transition:color .15s}
+  .mob-tab .mt-ico{font-size:1.25rem;line-height:1}
+  .mob-tab.active{color:#58a6ff;border-top:2px solid #58a6ff}
+  .mob-tab.active-calc{color:#3fb950;border-top:2px solid #3fb950}
+}
 </style>
 </head>
 <body>
@@ -482,6 +509,17 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 
 </div><!-- /right -->
 </div><!-- /main -->
+
+<!-- Mobile tab bar -->
+<div class="mob-tabs" id="mobTabs">
+  <button class="mob-tab active" id="mobTabSetup" onclick="switchMobileTab('setup')">
+    <span class="mt-ico">⚙️</span>Setup
+  </button>
+  <button class="mob-tab" id="mobTab3d" onclick="switchMobileTab('3d')">
+    <span class="mt-ico">🏗️</span>3D View
+  </button>
+</div>
+
 </div><!-- /app -->
 
 <script>
@@ -787,6 +825,19 @@ function loadState() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // INIT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function isMobile(){return window.innerWidth<=700;}
+function switchMobileTab(tab){
+  const main=document.querySelector('.main');
+  main.classList.toggle('tab-setup',tab==='setup');
+  main.classList.toggle('tab-3d',tab==='3d');
+  document.getElementById('mobTabSetup').className='mob-tab'+(tab==='setup'?' active':'');
+  document.getElementById('mobTab3d').className='mob-tab'+(tab==='3d'?(lastViz?' active-calc':' active'):'');
+  if(tab==='3d'){setTimeout(()=>{if(lastViz)draw3D(...lastViz);else drawEmpty3D();},50);}
+}
+function initMobileTabs(){
+  if(isMobile())switchMobileTab('setup');
+}
+
 function init() {
   loadState();
   onContainerChange();
@@ -796,6 +847,7 @@ function init() {
   updateContainerDims();
   initDrag();
   drawEmpty3D();
+  initMobileTabs();
   window.addEventListener('resize',()=>{if(lastViz)draw3D(...lastViz);else drawEmpty3D();});
 }
 
@@ -964,6 +1016,7 @@ function calculate() {
     lastViz=[perL,perH,perW,c,p,inputCount,maxCount,zone2];
   }
   draw3D(...lastViz);
+  if(isMobile())switchMobileTab('3d');
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
