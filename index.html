@@ -718,39 +718,45 @@ function showKeyDialog() {
 
 // ── Admin passcode ──
 const _ADMIN_HASH='4328778c44b47c4d4573043bf28f0ef3bd2bfc39d613dd37a97ec04920cd95d3';
+let _adminPcEl=null; // direct reference to overlay
 async function _hashStr(s){
   const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
-async function promptAdminPasscode(){
-  const wrap=document.createElement('div');
-  wrap.id='_adminPcOverlay';
-  wrap.style.cssText='position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center';
-  wrap.innerHTML=`<div style="background:#161b22;border:1px solid #f0883e;border-radius:10px;padding:24px;width:280px;text-align:center">
+function promptAdminPasscode(){
+  if(_adminPcEl)_adminPcEl.remove();
+  _adminPcEl=document.createElement('div');
+  _adminPcEl.style.cssText='position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center';
+  const box=document.createElement('div');
+  box.style.cssText='background:#161b22;border:1px solid #f0883e;border-radius:10px;padding:24px;width:280px;text-align:center';
+  box.innerHTML=`
     <div style="font-size:1.5rem;margin-bottom:8px">🔐</div>
     <div style="font-size:0.85rem;color:#c9d1d9;margin-bottom:14px">Admin Passcode</div>
-    <input id="_adminPcInput" type="password" maxlength="20" placeholder="Enter passcode"
-      style="width:100%;padding:9px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#f0f6fc;font-size:1rem;text-align:center;outline:none;letter-spacing:.2em"
-      onkeydown="if(event.key==='Enter')_checkAdminPc()">
-    <button onclick="_checkAdminPc()" style="width:100%;margin-top:10px;padding:9px;background:linear-gradient(135deg,#1f6feb,#388bfd);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:0.9rem">Enter</button>
-    <button onclick="document.getElementById('_adminPcOverlay')?.remove()" style="width:100%;margin-top:6px;padding:7px;background:transparent;border:1px solid #30363d;border-radius:6px;color:#6e7681;cursor:pointer;font-size:0.8rem">Cancel</button>
-    <div id="_adminPcMsg" style="min-height:18px;margin-top:8px;font-size:0.75rem;color:#f85149"></div>
-  </div>`;
-  document.body.appendChild(wrap);
-  setTimeout(()=>document.getElementById('_adminPcInput')?.focus(),50);
+    <input id="_apc" type="password" maxlength="20" placeholder="Enter passcode"
+      style="width:100%;padding:9px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#f0f6fc;font-size:1rem;text-align:center;outline:none;letter-spacing:.2em">
+    <button id="_apcEnter" style="width:100%;margin-top:10px;padding:9px;background:linear-gradient(135deg,#1f6feb,#388bfd);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:0.9rem">Enter</button>
+    <button id="_apcCancel" style="width:100%;margin-top:6px;padding:7px;background:transparent;border:1px solid #30363d;border-radius:6px;color:#6e7681;cursor:pointer;font-size:0.8rem">Cancel</button>
+    <div id="_apcMsg" style="min-height:18px;margin-top:8px;font-size:0.75rem;color:#f85149"></div>`;
+  _adminPcEl.appendChild(box);
+  document.body.appendChild(_adminPcEl);
+  const inp=document.getElementById('_apc');
+  inp.focus();
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter')_checkAdminPc();});
+  document.getElementById('_apcEnter').addEventListener('click',_checkAdminPc);
+  document.getElementById('_apcCancel').addEventListener('click',()=>{_adminPcEl.remove();_adminPcEl=null;});
 }
 async function _checkAdminPc(){
-  const val=document.getElementById('_adminPcInput')?.value||'';
+  const inp=document.getElementById('_apc');
+  const val=inp?inp.value:'';
   const hash=await _hashStr(val);
   if(hash===_ADMIN_HASH){
-    document.getElementById('_adminPcOverlay')?.remove();
+    _adminPcEl.remove(); _adminPcEl=null;
     const d=new Date(); d.setFullYear(d.getFullYear()+1);
     document.getElementById('adminDate').value=d.toISOString().split('T')[0];
     document.getElementById('adminPanel').style.display='flex';
   }else{
-    const msg=document.getElementById('_adminPcMsg');
+    const msg=document.getElementById('_apcMsg');
     if(msg){msg.textContent='Wrong passcode.';setTimeout(()=>{if(msg)msg.textContent='';},1500);}
-    const inp=document.getElementById('_adminPcInput');
     if(inp){inp.value='';inp.focus();}
   }
 }
