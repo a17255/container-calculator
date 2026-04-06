@@ -31,14 +31,39 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#c9d1d
 
 /* ── Admin panel ── */
 #adminPanel{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center}
-.admin-card{background:#161b22;border:1px solid #f0883e;border-radius:12px;padding:24px;width:400px;max-width:90vw}
-.admin-title{font-size:1rem;font-weight:700;color:#f0883e;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
+.admin-card{background:#161b22;border:1px solid #f0883e;border-radius:12px;padding:0;width:680px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column}
+.admin-title{font-size:1rem;font-weight:700;color:#f0883e;padding:16px 20px 0;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
 .admin-close{background:none;border:none;color:#8b949e;cursor:pointer;font-size:1.1rem;padding:2px 6px}
 .admin-close:hover{color:#f0f6fc}
+/* Admin tabs */
+.admin-tabs{display:flex;border-bottom:1px solid #30363d;margin:10px 20px 0;flex-shrink:0}
+.admin-tab{padding:7px 16px;background:none;border:none;border-bottom:2px solid transparent;color:#6e7681;cursor:pointer;font-size:0.82rem;font-family:inherit;transition:all .15s;margin-bottom:-1px}
+.admin-tab.on{color:#f0883e;border-bottom-color:#f0883e}
+.admin-tab:hover:not(.on){color:#c9d1d9}
+.admin-pane{padding:16px 20px;overflow-y:auto;flex:1}
+.admin-pane.hidden{display:none}
 .admin-result{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px 14px;font-family:'Courier New',monospace;font-size:1.1rem;letter-spacing:.12em;color:#3fb950;text-align:center;margin:12px 0;user-select:all}
 .copy-btn{width:100%;padding:8px;background:#1f4820;border:1px solid #3fb950;border-radius:6px;color:#3fb950;cursor:pointer;font-size:0.85rem;transition:all .15s}
 .copy-btn:hover{background:#3fb950;color:#0d1117}
-.key-list{max-height:160px;overflow-y:auto;margin-top:10px}
+/* Key management table */
+.km-bar{display:flex;gap:8px;margin-bottom:10px;align-items:center}
+.km-search{flex:1;padding:6px 9px;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#c9d1d9;font-size:0.8rem;outline:none}
+.km-search:focus{border-color:#f0883e}
+.km-reload{padding:6px 12px;background:transparent;border:1px solid #30363d;border-radius:5px;color:#8b949e;cursor:pointer;font-size:0.8rem}
+.km-reload:hover{border-color:#f0883e;color:#f0883e}
+.km-table{width:100%;border-collapse:collapse;font-size:0.72rem}
+.km-table th{color:#f0883e;font-weight:600;padding:5px 7px;text-align:left;border-bottom:1px solid #30363d;white-space:nowrap;position:sticky;top:0;background:#161b22}
+.km-table td{padding:5px 7px;border-bottom:1px solid #21262d;vertical-align:middle}
+.km-table tr:last-child td{border-bottom:none}
+.km-table tr:hover td{background:rgba(255,255,255,.03)}
+.km-key{font-family:'Courier New',monospace;font-size:0.75rem;color:#c9d1d9}
+.km-unclaimed{color:#f0883e;font-size:0.68rem}
+.km-claimed{color:#3fb950;font-size:0.68rem}
+.km-disabled{color:#f85149;font-size:0.68rem}
+.km-act{padding:3px 8px;border-radius:4px;border:1px solid;cursor:pointer;font-size:0.68rem;background:transparent;font-family:inherit}
+.km-act-dis{border-color:#f85149;color:#f85149}.km-act-dis:hover{background:rgba(248,81,73,.15)}
+.km-act-ena{border-color:#3fb950;color:#3fb950}.km-act-ena:hover{background:rgba(63,185,80,.15)}
+.km-empty{color:#484f58;font-size:0.78rem;padding:20px;text-align:center}
 .key-entry{background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:6px 10px;margin-bottom:5px;font-family:'Courier New',monospace;font-size:0.82rem;color:#8b949e;display:flex;justify-content:space-between;align-items:center}
 .key-entry span{color:#c9d1d9;font-size:0.72rem}
 
@@ -249,15 +274,32 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 <div id="adminPanel">
   <div class="admin-card">
     <div class="admin-title">
-      🔑 License Key Generator
+      🔑 License Manager
       <button class="admin-close" onclick="document.getElementById('adminPanel').style.display='none'">✕</button>
     </div>
-    <div class="fg"><label>Expiry Date</label><input type="date" id="adminDate"></div>
-    <div class="fg"><label>Customer note (optional)</label><input type="text" id="adminNote" placeholder="e.g. Nguyen Van A — Company XYZ"></div>
-    <button class="cbtn" style="margin-top:8px" onclick="generateAdminKey()">⚙ Generate & Save Key</button>
-    <div class="admin-result" id="adminKeyResult" style="display:none"></div>
-    <button class="copy-btn" id="adminCopyBtn" style="display:none" onclick="copyAdminKey()">📋 Copy Key</button>
-    <div class="key-list" id="keyHistory"></div>
+    <div class="admin-tabs">
+      <button class="admin-tab on" id="atab-gen" onclick="switchAdminTab('gen')">⚙ Generate Key</button>
+      <button class="admin-tab" id="atab-list" onclick="switchAdminTab('list')">📋 All Keys</button>
+    </div>
+
+    <!-- Generate tab -->
+    <div class="admin-pane" id="apane-gen">
+      <div class="fg"><label>Expiry Date</label><input type="date" id="adminDate"></div>
+      <div class="fg"><label>Customer note (optional)</label><input type="text" id="adminNote" placeholder="e.g. Nguyen Van A — Company XYZ"></div>
+      <button class="cbtn" style="margin-top:8px" onclick="generateAdminKey()">⚙ Generate & Save Key</button>
+      <div class="admin-result" id="adminKeyResult" style="display:none"></div>
+      <button class="copy-btn" id="adminCopyBtn" style="display:none" onclick="copyAdminKey()">📋 Copy Key</button>
+      <div id="keyHistory" style="margin-top:10px"></div>
+    </div>
+
+    <!-- All Keys tab -->
+    <div class="admin-pane hidden" id="apane-list">
+      <div class="km-bar">
+        <input class="km-search" id="kmSearch" placeholder="Search key or email or note…" oninput="renderKeyTable()">
+        <button class="km-reload" onclick="loadKeyList()">↺ Refresh</button>
+      </div>
+      <div id="kmTableWrap"><div class="km-empty">Click ↺ Refresh to load keys</div></div>
+    </div>
   </div>
 </div>
 
@@ -614,6 +656,7 @@ async function tryUnlock() {
     const snap=await keyRef.get();
     if(!snap.exists){inp.classList.add('err-inp');setLockMsg('bad','Key not found. Contact hovanphapbk@gmail.com');setLockBusy(false);return;}
     const data=snap.data();
+    if(data.disabled){setLockMsg('bad','This key has been disabled. Contact hovanphapbk@gmail.com');setLockBusy(false);return;}
     if(data.claimedBy && data.claimedBy!==email){setLockMsg('bad','This key is already registered to another account.');setLockBusy(false);return;}
     if(!data.claimedBy){
       await keyRef.update({claimedBy:email,claimedAt:firebase.firestore.FieldValue.serverTimestamp()});
@@ -671,6 +714,65 @@ function showKeyDialog() {
   const cur=document.getElementById('keyInput').value;
   document.getElementById('lockScreen').style.display='flex';
   document.getElementById('app').classList.remove('unlocked');
+}
+
+// ── Admin tabs ──
+function switchAdminTab(tab){
+  ['gen','list'].forEach(t=>{
+    document.getElementById('atab-'+t).classList.toggle('on',t===tab);
+    document.getElementById('apane-'+t).classList.toggle('hidden',t!==tab);
+  });
+  if(tab==='list')loadKeyList();
+}
+
+// ── Key management ──
+let _allKeys=[];
+async function loadKeyList(){
+  document.getElementById('kmTableWrap').innerHTML='<div class="km-empty">⏳ Loading…</div>';
+  try{
+    const snap=await db.collection('keys').orderBy('createdAt','desc').get();
+    _allKeys=snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderKeyTable();
+  }catch(e){
+    document.getElementById('kmTableWrap').innerHTML=`<div class="km-empty">Error: ${e.message}</div>`;
+  }
+}
+function renderKeyTable(){
+  const q=(document.getElementById('kmSearch').value||'').toLowerCase();
+  const rows=_allKeys.filter(k=>!q||k.key?.toLowerCase().includes(q)||k.claimedBy?.toLowerCase().includes(q)||k.note?.toLowerCase().includes(q));
+  if(!rows.length){document.getElementById('kmTableWrap').innerHTML='<div class="km-empty">No keys found</div>';return;}
+  let h=`<table class="km-table"><thead><tr>
+    <th>Key</th><th>Note / Customer</th><th>Expiry</th><th>Status</th><th>Action</th>
+  </tr></thead><tbody>`;
+  for(const k of rows){
+    const dis=k.disabled;
+    const claimed=k.claimedBy;
+    let statusHtml=dis
+      ?`<span class="km-disabled">🚫 Disabled</span>`
+      :claimed
+        ?`<span class="km-claimed">✓ ${claimed}</span>`
+        :`<span class="km-unclaimed">● Unclaimed</span>`;
+    const actHtml=dis
+      ?`<button class="km-act km-act-ena" onclick="toggleKey('${k.id}',false)">Enable</button>`
+      :`<button class="km-act km-act-dis" onclick="toggleKey('${k.id}',true)">Disable</button>`;
+    h+=`<tr style="${dis?'opacity:0.5':''}">
+      <td class="km-key">${k.key||k.id}</td>
+      <td style="color:#8b949e;max-width:150px;overflow:hidden;text-overflow:ellipsis">${k.note||'—'}</td>
+      <td style="color:#8b949e">${k.expiryDate||'—'}</td>
+      <td>${statusHtml}</td>
+      <td>${actHtml}</td>
+    </tr>`;
+  }
+  h+=`</tbody></table>`;
+  document.getElementById('kmTableWrap').innerHTML=h;
+}
+async function toggleKey(keyId, disable){
+  try{
+    await db.collection('keys').doc(keyId).update({disabled: disable});
+    const k=_allKeys.find(k=>k.id===keyId);
+    if(k)k.disabled=disable;
+    renderKeyTable();
+  }catch(e){alert('Error: '+e.message);}
 }
 
 // ── Admin panel ──
