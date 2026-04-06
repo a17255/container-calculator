@@ -724,6 +724,7 @@ async function _hashStr(s){
 }
 async function promptAdminPasscode(){
   const wrap=document.createElement('div');
+  wrap.id='_adminPcOverlay';
   wrap.style.cssText='position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center';
   wrap.innerHTML=`<div style="background:#161b22;border:1px solid #f0883e;border-radius:10px;padding:24px;width:280px;text-align:center">
     <div style="font-size:1.5rem;margin-bottom:8px">🔐</div>
@@ -732,7 +733,7 @@ async function promptAdminPasscode(){
       style="width:100%;padding:9px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#f0f6fc;font-size:1rem;text-align:center;outline:none;letter-spacing:.2em"
       onkeydown="if(event.key==='Enter')_checkAdminPc()">
     <button onclick="_checkAdminPc()" style="width:100%;margin-top:10px;padding:9px;background:linear-gradient(135deg,#1f6feb,#388bfd);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:0.9rem">Enter</button>
-    <button onclick="this.closest('div[style]').remove()" style="width:100%;margin-top:6px;padding:7px;background:transparent;border:1px solid #30363d;border-radius:6px;color:#6e7681;cursor:pointer;font-size:0.8rem">Cancel</button>
+    <button onclick="document.getElementById('_adminPcOverlay')?.remove()" style="width:100%;margin-top:6px;padding:7px;background:transparent;border:1px solid #30363d;border-radius:6px;color:#6e7681;cursor:pointer;font-size:0.8rem">Cancel</button>
     <div id="_adminPcMsg" style="min-height:18px;margin-top:8px;font-size:0.75rem;color:#f85149"></div>
   </div>`;
   document.body.appendChild(wrap);
@@ -742,7 +743,7 @@ async function _checkAdminPc(){
   const val=document.getElementById('_adminPcInput')?.value||'';
   const hash=await _hashStr(val);
   if(hash===_ADMIN_HASH){
-    document.querySelector('div[style*="z-index:10001"]')?.remove();
+    document.getElementById('_adminPcOverlay')?.remove();
     const d=new Date(); d.setFullYear(d.getFullYear()+1);
     document.getElementById('adminDate').value=d.toISOString().split('T')[0];
     document.getElementById('adminPanel').style.display='flex';
