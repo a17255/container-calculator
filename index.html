@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Container Packing Calculator</title>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#c9d1d9;height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -229,7 +231,9 @@ input[type=range]{width:65px;accent-color:#58a6ff}
     <div class="lock-title">Container Packing Calculator</div>
     <div class="lock-sub">Professional shipping container optimizer</div>
     <div class="lock-card">
-      <label>Enter License Key</label>
+      <label>Your Email</label>
+      <input type="email" id="emailInput" placeholder="your@email.com" autocomplete="email" onkeydown="if(event.key==='Enter')tryUnlock()" style="margin-bottom:10px">
+      <label>License Key</label>
       <input type="text" id="keyInput" placeholder="CPC-XXXX-XXXX-XXXX" maxlength="19" autocomplete="off" oninput="formatKeyInput()" onkeydown="if(event.key==='Enter')tryUnlock()">
       <button class="lock-btn" onclick="tryUnlock()">🔓 Unlock</button>
       <div id="lockMsg"></div>
@@ -249,7 +253,8 @@ input[type=range]{width:65px;accent-color:#58a6ff}
       <button class="admin-close" onclick="document.getElementById('adminPanel').style.display='none'">✕</button>
     </div>
     <div class="fg"><label>Expiry Date</label><input type="date" id="adminDate"></div>
-    <button class="cbtn" style="margin-top:8px" onclick="generateAdminKey()">⚙ Generate Key</button>
+    <div class="fg"><label>Customer note (optional)</label><input type="text" id="adminNote" placeholder="e.g. Nguyen Van A — Company XYZ"></div>
+    <button class="cbtn" style="margin-top:8px" onclick="generateAdminKey()">⚙ Generate & Save Key</button>
     <div class="admin-result" id="adminKeyResult" style="display:none"></div>
     <button class="copy-btn" id="adminCopyBtn" style="display:none" onclick="copyAdminKey()">📋 Copy Key</button>
     <div class="key-list" id="keyHistory"></div>
@@ -524,6 +529,20 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 
 <script>
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FIREBASE INIT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const firebaseConfig = {
+  apiKey: "AIzaSyApvfx6ZrkEkjQgao3gUC9eQmPKn2cIbBE",
+  authDomain: "container-calculator-f41f7.firebaseapp.com",
+  projectId: "container-calculator-f41f7",
+  storageBucket: "container-calculator-f41f7.firebasestorage.app",
+  messagingSenderId: "835102553049",
+  appId: "1:835102553049:web:6a17a9d16c1d4e2c33dfc8"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LICENSE KEY SYSTEM
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Key format: CPC-XXXX-XXXX-XXXX (12 hex chars in 3 groups)
@@ -569,58 +588,81 @@ function formatKeyInput() {
   el.value=out;
 }
 
-function tryUnlock() {
+function setLockMsg(type, text){const el=document.getElementById('lockMsg');el.className=type;el.textContent=text;}
+function setLockBusy(busy){const btn=document.querySelector('#lockScreen .lock-btn');if(btn){btn.disabled=busy;btn.textContent=busy?'⏳ Checking…':'🔓 Unlock';}}
+
+async function tryUnlock() {
   const raw=document.getElementById('keyInput').value.trim();
-  const msgEl=document.getElementById('lockMsg');
+  const email=document.getElementById('emailInput').value.trim().toLowerCase();
   const inp=document.getElementById('keyInput');
   inp.classList.remove('err-inp');
+  setLockMsg('','');
+
+  if(!email||!email.includes('@')){setLockMsg('bad','Enter a valid email address.');return;}
+
   const expiry=validateLicKey(raw);
-  if(!expiry){
-    inp.classList.add('err-inp');
-    msgEl.className='bad';
-    msgEl.textContent='Invalid key. Check format and try again.';
-    return;
+  if(!expiry){inp.classList.add('err-inp');setLockMsg('bad','Invalid key format. Check and try again.');return;}
+
+  const today=new Date(); today.setHours(0,0,0,0); expiry.setHours(0,0,0,0);
+  if(expiry<today){inp.classList.add('err-inp');setLockMsg('warn',`Key expired on ${expiry.toLocaleDateString('en-GB')}. Please renew.`);return;}
+
+  setLockBusy(true);
+  setLockMsg('ok','Verifying with server…');
+  const keyId=raw.toUpperCase().replace(/[\s\-]/g,'').slice(3);
+  try{
+    const keyRef=db.collection('keys').doc(keyId);
+    const snap=await keyRef.get();
+    if(!snap.exists){inp.classList.add('err-inp');setLockMsg('bad','Key not found. Contact hovanphapbk@gmail.com');setLockBusy(false);return;}
+    const data=snap.data();
+    if(data.claimedBy && data.claimedBy!==email){setLockMsg('bad','This key is already registered to another account.');setLockBusy(false);return;}
+    if(!data.claimedBy){
+      await keyRef.update({claimedBy:email,claimedAt:firebase.firestore.FieldValue.serverTimestamp()});
+    }
+    localStorage.setItem(LS_LIC,JSON.stringify({key:raw.toUpperCase(),email,expiry:expiry.toISOString()}));
+    setLockMsg('ok','✓ License valid — loading…');
+    setTimeout(()=>{unlockApp(expiry,email);},600);
+  }catch(e){
+    setLockMsg('bad','Connection error. Check internet and try again.');
+    setLockBusy(false);
   }
-  const today=new Date(); today.setHours(0,0,0,0);
-  expiry.setHours(0,0,0,0);
-  if(expiry<today){
-    inp.classList.add('err-inp');
-    msgEl.className='warn';
-    msgEl.textContent=`Key expired on ${expiry.toLocaleDateString('en-GB')}. Please renew.`;
-    return;
-  }
-  // Valid — store and unlock
-  localStorage.setItem(LS_LIC, JSON.stringify({key:raw.toUpperCase(),expiry:expiry.toISOString()}));
-  msgEl.className='ok';
-  msgEl.textContent='✓ License valid — loading…';
-  setTimeout(()=>{unlockApp(expiry);},600);
 }
 
-function checkStoredLicense() {
-  try {
+async function checkStoredLicense() {
+  try{
     const raw=localStorage.getItem(LS_LIC);
     if(!raw) return false;
     const st=JSON.parse(raw);
     const expiry=validateLicKey(st.key||'');
     if(!expiry) return false;
-    const today=new Date(); today.setHours(0,0,0,0);
-    expiry.setHours(0,0,0,0);
-    if(expiry<today){ localStorage.removeItem(LS_LIC); return false; }
-    unlockApp(expiry);
+    const today=new Date(); today.setHours(0,0,0,0); expiry.setHours(0,0,0,0);
+    if(expiry<today){localStorage.removeItem(LS_LIC);return false;}
+    // Verify against Firestore (with offline fallback)
+    try{
+      const keyId=st.key.replace(/[\s\-]/g,'').slice(3);
+      const snap=await Promise.race([
+        db.collection('keys').doc(keyId).get(),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000))
+      ]);
+      if(!snap.exists){localStorage.removeItem(LS_LIC);return false;}
+      if(snap.data().claimedBy!==st.email){localStorage.removeItem(LS_LIC);return false;}
+    }catch(e){
+      // Offline or timeout — trust localStorage
+      console.warn('Firestore check skipped (offline?):', e.message);
+    }
+    unlockApp(expiry, st.email);
     return true;
-  } catch(e){return false;}
+  }catch(e){return false;}
 }
 
-function unlockApp(expiry) {
+function unlockApp(expiry, email) {
   document.getElementById('lockScreen').style.display='none';
   document.getElementById('app').classList.add('unlocked');
-  // Update license badge
-  const today=new Date(); today.setHours(0,0,0,0);
-  expiry.setHours(0,0,0,0);
+  const today=new Date(); today.setHours(0,0,0,0); expiry.setHours(0,0,0,0);
   const daysLeft=Math.round((expiry-today)/86400000);
   const badge=document.getElementById('licBadge');
-  if(daysLeft<=30){badge.className='lic-badge lic-warn';badge.textContent=`⚠ ${daysLeft}d left`;}
-  else{badge.className='lic-badge lic-ok';badge.textContent=`✓ Until ${expiry.toLocaleDateString('en-GB')}`;}
+  const user=email?` · ${email.split('@')[0]}`:'';
+  if(daysLeft<=30){badge.className='lic-badge lic-warn';badge.textContent=`⚠ ${daysLeft}d left${user}`;}
+  else{badge.className='lic-badge lic-ok';badge.textContent=`✓ ${expiry.toLocaleDateString('en-GB')}${user}`;}
   init();
 }
 
@@ -652,22 +694,36 @@ function setupAdminAccess() {
   document.getElementById('lockIconClick').addEventListener('click', handleAdminClick);
 }
 
-function generateAdminKey() {
+async function generateAdminKey() {
   const val=document.getElementById('adminDate').value;
   if(!val){alert('Select an expiry date.');return;}
   const expiry=new Date(val+'T00:00:00');
   const today=new Date(); today.setHours(0,0,0,0);
   if(expiry<=today){alert('Expiry date must be in the future.');return;}
   const key=genLicKey(expiry);
-  document.getElementById('adminKeyResult').textContent=key;
-  document.getElementById('adminKeyResult').style.display='block';
-  document.getElementById('adminCopyBtn').style.display='block';
-  // Add to history
-  const hist=document.getElementById('keyHistory');
-  const entry=document.createElement('div');
-  entry.className='key-entry';
-  entry.innerHTML=`${key} <span>Expires ${expiry.toLocaleDateString('en-GB')}</span>`;
-  hist.prepend(entry);
+  const keyId=key.replace(/[\s\-]/g,'').slice(3);
+  const note=document.getElementById('adminNote').value.trim();
+  const btn=document.querySelector('#adminPanel .cbtn');
+  btn.disabled=true; btn.textContent='⏳ Saving…';
+  try{
+    await db.collection('keys').doc(keyId).set({
+      key, expiryDate:val, note:note||'',
+      claimedBy:null, claimedAt:null,
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    document.getElementById('adminKeyResult').textContent=key;
+    document.getElementById('adminKeyResult').style.display='block';
+    document.getElementById('adminCopyBtn').style.display='block';
+    document.getElementById('adminNote').value='';
+    const hist=document.getElementById('keyHistory');
+    const entry=document.createElement('div');
+    entry.className='key-entry';
+    entry.innerHTML=`${key} <span>${note||'—'} · Exp ${expiry.toLocaleDateString('en-GB')} · ✓ DB</span>`;
+    hist.prepend(entry);
+  }catch(e){
+    alert('Failed to save to database: '+e.message);
+  }
+  btn.disabled=false; btn.textContent='⚙ Generate & Save Key';
 }
 
 function copyAdminKey() {
@@ -1632,9 +1688,7 @@ function applySuggestion(...dims){
 // BOOT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 setupAdminAccess();
-if(!checkStoredLicense()){
-  // Show lock screen (already visible by default)
-}
+checkStoredLicense();
 </script>
 </body>
 </html>
