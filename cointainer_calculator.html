@@ -86,9 +86,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#c9d1d
 .print-btn:hover{border-color:#58a6ff;color:#58a6ff}
 
 /* ── Main layout ── */
-.main{display:grid;grid-template-columns:290px 1fr;gap:0;flex:1;overflow:hidden}
-.left{overflow-y:auto;padding:8px;border-right:1px solid #30363d;display:flex;flex-direction:column;gap:7px}
-.right{display:flex;flex-direction:column;overflow:hidden}
+.main{display:flex;flex-direction:row;gap:0;flex:1;overflow:hidden;min-height:0}
+.left{overflow-y:auto;padding:8px;border-right:1px solid #30363d;display:flex;flex-direction:column;gap:7px;flex:0 0 290px;min-width:280px;max-width:800px}
+.right{display:flex;flex-direction:column;overflow:hidden;flex:1;min-width:0}
+.resizer{flex:0 0 6px;cursor:col-resize;background:#30363d;transition:background .15s;position:relative;z-index:5}
+.resizer:hover,.resizer.dragging{background:#58a6ff}
 
 /* ── Cards ── */
 .card{background:#161b22;border:1px solid #30363d;border-radius:7px;padding:11px}
@@ -248,7 +250,9 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 @media(max-width:700px){
   body,#app{height:100dvh;overflow:hidden}
   #app{padding-bottom:54px}
-  .main{grid-template-columns:1fr!important;flex:1;overflow:hidden;height:100%}
+  .main{grid-template-columns:1fr!important;flex:1;overflow:hidden;height:100%;flex-direction:column}
+  .main .resizer{display:none!important}
+  .main .left{flex:1 1 auto!important;max-width:none!important;min-width:0!important;width:100%}
   /* Hide inactive panel via tab state */
   .main.tab-setup .right{display:none!important}
   .main.tab-3d .left{display:none!important}
@@ -536,6 +540,8 @@ input[type=range]{width:65px;accent-color:#58a6ff}
   </div>
 
 </div><!-- /left -->
+
+<div class="resizer" id="panelResizer" title="Drag to resize"></div>
 
 <!-- ═══ RIGHT ═══ -->
 <div class="right">
@@ -1396,6 +1402,39 @@ function init() {
     renderSgAdvanced();
   }
   window.addEventListener('resize',()=>{if(lastViz)draw3D(...lastViz);else drawEmpty3D();});
+  initPanelResizer();
+}
+
+function initPanelResizer(){
+  const resizer = document.getElementById('panelResizer');
+  const left = document.querySelector('.main > .left');
+  if(!resizer || !left) return;
+  let dragging = false;
+  const MIN = 280, MAX = 800;
+  resizer.addEventListener('mousedown', e => {
+    dragging = true;
+    resizer.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', e => {
+    if(!dragging) return;
+    const rect = left.getBoundingClientRect();
+    let w = e.clientX - rect.left;
+    if(w < MIN) w = MIN;
+    if(w > MAX) w = MAX;
+    left.style.flex = `0 0 ${w}px`;
+  });
+  window.addEventListener('mouseup', () => {
+    if(!dragging) return;
+    dragging = false;
+    resizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    if(lastViz) requestAnimationFrame(() => draw3D(...lastViz));
+    else requestAnimationFrame(() => drawEmpty3D());
+  });
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
