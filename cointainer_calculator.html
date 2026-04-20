@@ -459,7 +459,7 @@ input[type=range]{width:65px;accent-color:#58a6ff}
   <!-- Packs Panel (multi-pack) -->
   <div class="packs-panel">
     <div class="packs-hdr">
-      <span>Packages</span>
+      <span>Additional packages</span>
       <span class="alloc-sum ok" id="allocSum">Sum: 100% ✓</span>
     </div>
     <div class="split-axis" id="splitAxisRow">
@@ -1159,9 +1159,11 @@ function seedPack0FromLegacy(){
 function renderPacksPanel(){
   const list = document.getElementById('packsList');
   if(!list) return;
-  list.innerHTML = packs.map((p, idx) => packCardHTML(p, idx)).join('');
+  // Legacy primary section IS Pack 1 — only render Pack 2+ here.
+  const extras = packs.slice(1);
+  list.innerHTML = extras.map((p, i) => packCardHTML(p, i + 1)).join('');
   updateAllocSum();
-  packs.forEach((p, idx) => wirePackCard(idx));
+  extras.forEach((_, i) => wirePackCard(i + 1));
   const btn = document.getElementById('btnAddPack');
   if(btn) btn.disabled = packs.length >= 3;
   const autoLbl = document.getElementById('autoAxisLabel');
