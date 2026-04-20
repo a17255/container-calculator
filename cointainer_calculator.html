@@ -195,6 +195,26 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 .pkg2-off{background:#0d1117;color:#484f58;border:1px solid #30363d}
 .zone2-color{color:#4ecca3}
 
+/* ── Packs panel (multi-pack UI) ── */
+.packs-panel { border:1px solid #30363d; border-radius:6px; padding:12px; margin-top:12px; background:#0d1117; }
+.packs-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-weight:600; color:#c9d1d9; }
+.split-axis { display:flex; gap:8px; align-items:center; margin-bottom:10px; font-size:13px; color:#c9d1d9; }
+.split-axis label { display:flex; align-items:center; gap:4px; cursor:pointer; }
+.pack-card { border:1px solid #30363d; border-left:4px solid var(--pack-color,#3fb950); border-radius:4px; padding:10px; margin-bottom:10px; background:#161b22; }
+.pack-card-hdr { display:flex; justify-content:space-between; align-items:center; font-weight:600; margin-bottom:6px; color:#c9d1d9; }
+.pack-color-swatch { display:inline-block; width:12px; height:12px; border-radius:2px; margin-right:6px; vertical-align:middle; }
+.pack-card label { display:inline-flex; align-items:center; gap:4px; margin:2px 8px 2px 0; font-size:13px; color:#c9d1d9; }
+.pack-card input[type=number], .pack-card select { background:#0d1117; border:1px solid #30363d; color:#c9d1d9; padding:2px 6px; border-radius:3px; width:70px; }
+.alloc-row { display:flex; align-items:center; gap:8px; margin:6px 0; }
+.alloc-row input[type=range] { flex:1; }
+.btn-remove { background:#da3633; color:#fff; border:none; border-radius:4px; padding:2px 8px; cursor:pointer; font-size:12px; }
+.btn-add-pack { background:#238636; color:#fff; border:none; border-radius:4px; padding:6px 12px; cursor:pointer; width:100%; margin-top:8px; }
+.btn-add-pack:disabled { background:#484f58; cursor:not-allowed; }
+.btn-suggest-pack { background:#1f6feb; color:#fff; border:none; border-radius:4px; padding:4px 10px; cursor:pointer; font-size:12px; margin-top:6px; }
+.alloc-sum { font-size:13px; font-weight:600; }
+.alloc-sum.bad { color:#f85149; }
+.alloc-sum.ok { color:#3fb950; }
+
 /* ── Suggest table ── */
 .sug-table{width:100%;border-collapse:collapse;font-size:0.71rem;margin-bottom:6px}
 .sug-table th{color:#58a6ff;font-weight:600;padding:3px 7px;text-align:left;border-bottom:1px solid #30363d;white-space:nowrap}
@@ -421,49 +441,21 @@ input[type=range]{width:65px;accent-color:#58a6ff}
     </div>
   </div>
 
-  <!-- Secondary Package (Mixed Load) -->
-  <div class="card" id="pkg2Card">
-    <div class="pkg2-hdr" onclick="togglePkg2()">
-      <span class="sec" style="margin-bottom:0">📦 Secondary Package</span>
-      <span class="pkg2-badge pkg2-off" id="pkg2Badge">OFF</span>
+  <!-- Packs Panel (multi-pack) -->
+  <div class="packs-panel">
+    <div class="packs-hdr">
+      <span>Packages</span>
+      <span class="alloc-sum ok" id="allocSum">Sum: 100% ✓</span>
     </div>
-    <div id="pkg2Body" style="display:none;margin-top:8px">
-      <div class="bg" style="margin-bottom:7px">
-        <button class="tb ab" id="btn2_cylinder" onclick="setType2('cylinder')"><span class="ico">⭕</span>Cylinder</button>
-        <button class="tb" id="btn2_square" onclick="setType2('square')"><span class="ico">⬛</span>Square</button>
-        <button class="tb" id="btn2_rect" onclick="setType2('rect')"><span class="ico">📦</span>Rectangle</button>
-        <button class="tb" id="btn2_sphere" onclick="setType2('sphere')"><span class="ico">🔵</span>Sphere</button>
-      </div>
-      <div id="inputs2_cylinder">
-        <div class="r2">
-          <div class="fg"><label>Diameter (cm)</label><input type="number" id="p2_d" step="0.1" min="0.1" value="20"></div>
-          <div class="fg"><label>Height (cm)</label><input type="number" id="p2_ch" step="0.1" min="0.1" value="40"></div>
-        </div>
-      </div>
-      <div id="inputs2_square" style="display:none">
-        <div class="r2">
-          <div class="fg"><label>Side (cm)</label><input type="number" id="p2_s" step="0.1" min="0.1" value="30"></div>
-          <div class="fg"><label>Height (cm)</label><input type="number" id="p2_sh" step="0.1" min="0.1" value="40"></div>
-        </div>
-      </div>
-      <div id="inputs2_rect" style="display:none">
-        <div class="r3">
-          <div class="fg"><label>Length (cm)</label><input type="number" id="p2_l" step="0.1" min="0.1" value="50"></div>
-          <div class="fg"><label>Width (cm)</label><input type="number" id="p2_w" step="0.1" min="0.1" value="30"></div>
-          <div class="fg"><label>Height (cm)</label><input type="number" id="p2_rh" step="0.1" min="0.1" value="20"></div>
-        </div>
-      </div>
-      <div id="inputs2_sphere" style="display:none">
-        <div class="fg"><label>Diameter (cm)</label><input type="number" id="p2_sd" step="0.1" min="0.1" value="20"></div>
-      </div>
-      <div style="border-top:1px solid #21262d;margin-top:8px;padding-top:8px">
-        <div class="r2">
-          <div class="fg"><label>Gap (mm)</label><input type="number" id="p2_gap" step="1" min="0" value="0"></div>
-          <div class="fg"><label>Weight/pkg (kg)</label><input type="number" id="p2_weight" step="0.1" min="0" value="" placeholder="optional"></div>
-        </div>
-      </div>
-      <div style="font-size:0.67rem;color:#484f58;margin-top:5px">Fills remaining height above Zone 1</div>
+    <div class="split-axis" id="splitAxisRow">
+      <span>Split axis:</span>
+      <label><input type="radio" name="splitAxis" value="L" checked> L</label>
+      <label><input type="radio" name="splitAxis" value="W"> W</label>
+      <label><input type="radio" name="splitAxis" value="H"> H</label>
+      <label id="autoAxisLabel"><input type="radio" name="splitAxis" value="auto"> auto*</label>
     </div>
+    <div id="packsList"></div>
+    <button class="btn-add-pack" id="btnAddPack" onclick="addPack()">+ Add package</button>
   </div>
 
   <!-- Orientation -->
@@ -1051,19 +1043,155 @@ function readDimsForShape(shape, suffix){
 }
 
 function syncPacksFromDOM(){
-  const shape1 = (document.querySelector('.chip[data-type].active')?.dataset.type) || pkgType || 'cylinder';
-  const gap1 = +(document.getElementById('p_gap')?.value || 0);
-  const w1 = +(document.getElementById('p_weight')?.value || 0);
-  const d1 = readDimsForShape(shape1, '');
-  packs = [{ id:1, shape:shape1, dims:d1, gap:gap1, weight:w1, allocPct:100, color:PACK_COLORS[0] }];
-  if(pkg2Enabled){
-    const shape2 = pkg2Type || 'cylinder';
-    const gap2 = +(document.getElementById('p2_gap')?.value || 0);
-    const w2 = +(document.getElementById('p2_weight')?.value || 0);
-    const d2 = readDimsForShape(shape2, '2');
-    packs[0].allocPct = 50;
-    packs.push({ id:2, shape:shape2, dims:d2, gap:gap2, weight:w2, allocPct:50, color:PACK_COLORS[1] });
+  // packs[] is already authoritative (bound by wirePackCard listeners).
+}
+
+// Seed pack 0 once on load from legacy primary-pack input values (kept intact for Task 10).
+function seedPack0FromLegacy(){
+  const g = (id) => +(document.getElementById(id)?.value || 0);
+  const shape = pkgType || 'cylinder';
+  let dims = {};
+  switch(shape){
+    case 'cylinder': dims = { d:g('p_d'), h:g('p_ch') }; break;
+    case 'square':   dims = { s:g('p_s'), h:g('p_sh') }; break;
+    case 'rect':
+    case 'rectangle': dims = { l:g('p_l'), w:g('p_w'), h:g('p_rh') }; break;
+    case 'sphere':   dims = { d:g('p_sd') }; break;
+    case 'wedge':    dims = { l:g('p_wdl'), w:g('p_wdw'), h:g('p_wdh') }; break;
+    case 'bag':      dims = { l:g('p_bgl'), w:g('p_bgw'), h:g('p_bgh') }; break;
   }
+  packs[0].shape = shape;
+  packs[0].dims = dims;
+  packs[0].gap = g('p_gap');
+  packs[0].weight = g('p_weight');
+}
+
+// ── Packs panel rendering & wiring ──
+function renderPacksPanel(){
+  const list = document.getElementById('packsList');
+  if(!list) return;
+  list.innerHTML = packs.map((p, idx) => packCardHTML(p, idx)).join('');
+  updateAllocSum();
+  packs.forEach((p, idx) => wirePackCard(idx));
+  const btn = document.getElementById('btnAddPack');
+  if(btn) btn.disabled = packs.length >= 3;
+  const autoLbl = document.getElementById('autoAxisLabel');
+  if(autoLbl) autoLbl.style.display = (typeof outputMode !== 'undefined' && outputMode === 'auto') ? '' : 'none';
+}
+
+function packCardHTML(p, idx){
+  const removeBtn = idx > 0
+    ? `<button class="btn-remove" onclick="removePack(${idx})">× Remove</button>` : '';
+  return (
+    `<div class="pack-card" style="--pack-color:${p.color}" data-pack-idx="${idx}">
+      <div class="pack-card-hdr">
+        <span><span class="pack-color-swatch" style="background:${p.color}"></span>Pack ${p.id}</span>
+        ${removeBtn}
+      </div>
+      <label>Shape:
+        <select class="pack-shape">
+          ${['cylinder','square','rect','sphere','wedge','bag']
+            .map(s => `<option value="${s}"${s===p.shape?' selected':''}>${s}</option>`).join('')}
+        </select>
+      </label>
+      <div class="pack-dims">${packDimsInputsHTML(p)}</div>
+      <label>Gap (cm): <input type="number" class="pack-gap" value="${p.gap||0}" min="0" step="1"></label>
+      <label>Weight (kg): <input type="number" class="pack-weight" value="${p.weight||0}" min="0" step="0.1"></label>
+      <div class="alloc-row">
+        <label>Alloc:</label>
+        <input type="range" class="pack-alloc" min="0" max="100" step="1" value="${p.allocPct}">
+        <span class="pack-alloc-val">${p.allocPct}%</span>
+      </div>
+      <button class="btn-suggest-pack" onclick="suggestForPack(${idx})">🔍 Suggest dims for this pack</button>
+    </div>`
+  );
+}
+
+function packDimsInputsHTML(p){
+  const v = (k) => (p.dims && p.dims[k]) ? p.dims[k] : '';
+  switch(p.shape){
+    case 'cylinder': return `<label>Dia: <input class="pack-dim" data-key="d" type="number" value="${v('d')}" min="0"></label>
+                             <label>Height: <input class="pack-dim" data-key="h" type="number" value="${v('h')}" min="0"></label>`;
+    case 'square':   return `<label>Side: <input class="pack-dim" data-key="s" type="number" value="${v('s')}" min="0"></label>
+                             <label>Height: <input class="pack-dim" data-key="h" type="number" value="${v('h')}" min="0"></label>`;
+    case 'rect':
+    case 'rectangle':
+    case 'wedge':
+    case 'bag':      return `<label>L: <input class="pack-dim" data-key="l" type="number" value="${v('l')}" min="0"></label>
+                             <label>W: <input class="pack-dim" data-key="w" type="number" value="${v('w')}" min="0"></label>
+                             <label>H: <input class="pack-dim" data-key="h" type="number" value="${v('h')}" min="0"></label>`;
+    case 'sphere':   return `<label>Dia: <input class="pack-dim" data-key="d" type="number" value="${v('d')}" min="0"></label>`;
+  }
+  return '';
+}
+
+function wirePackCard(idx){
+  const card = document.querySelector(`.pack-card[data-pack-idx="${idx}"]`);
+  if(!card) return;
+  card.querySelector('.pack-shape').addEventListener('change', e => {
+    packs[idx].shape = e.target.value;
+    packs[idx].dims = {};
+    renderPacksPanel();
+  });
+  card.querySelectorAll('.pack-dim').forEach(inp => {
+    inp.addEventListener('input', e => { packs[idx].dims[e.target.dataset.key] = +e.target.value; });
+  });
+  card.querySelector('.pack-gap').addEventListener('input', e => { packs[idx].gap = +e.target.value; });
+  card.querySelector('.pack-weight').addEventListener('input', e => { packs[idx].weight = +e.target.value; });
+  const alloc = card.querySelector('.pack-alloc');
+  const allocVal = card.querySelector('.pack-alloc-val');
+  alloc.addEventListener('input', e => {
+    packs[idx].allocPct = +e.target.value;
+    allocVal.textContent = packs[idx].allocPct + '%';
+    updateAllocSum();
+  });
+}
+
+function updateAllocSum(){
+  const sum = packs.reduce((a,p)=>a+(p.allocPct||0),0);
+  const el = document.getElementById('allocSum');
+  if(!el) return;
+  el.textContent = `Sum: ${sum.toFixed(0)}% ${Math.abs(sum-100)<0.5?'✓':'✗'}`;
+  el.className = `alloc-sum ${Math.abs(sum-100)<0.5?'ok':'bad'}`;
+}
+
+function addPack(){
+  if(packs.length >= 3) return;
+  const last = packs[packs.length - 1];
+  const newId = packs.length + 1;
+  packs.push({
+    id: newId,
+    shape: last.shape || 'cylinder',
+    dims: {},
+    gap: last.gap || 0,
+    weight: 0,
+    allocPct: 0,
+    color: PACK_COLORS[packs.length]
+  });
+  rebalanceAlloc();
+  renderPacksPanel();
+}
+
+function removePack(idx){
+  if(idx <= 0 || idx >= packs.length) return;
+  packs.splice(idx, 1);
+  packs.forEach((p,i) => { p.id = i + 1; p.color = PACK_COLORS[i]; });
+  rebalanceAlloc();
+  renderPacksPanel();
+}
+
+function rebalanceAlloc(){
+  const n = packs.length;
+  if(n === 0) return;
+  const even = Math.floor(100 / n);
+  packs.forEach(p => { p.allocPct = even; });
+  const sum = packs.reduce((a,p)=>a+p.allocPct, 0);
+  packs[0].allocPct += (100 - sum);
+}
+
+// Stub: suggestForPack lands in Task 13
+function suggestForPack(idx){
+  alert('Suggest-for-pack will be available in the next iteration.');
 }
 
 const LS_KEY='cpc_v2';
@@ -1083,17 +1211,12 @@ function saveState() {
     pkg_count:document.getElementById('pkg_count').value,
     viewAz,viewEl,
     pkg2Enabled,pkg2Type,
-    p2_d:document.getElementById('p2_d').value,p2_ch:document.getElementById('p2_ch').value,
-    p2_s:document.getElementById('p2_s').value,p2_sh:document.getElementById('p2_sh').value,
-    p2_l:document.getElementById('p2_l').value,p2_w:document.getElementById('p2_w').value,p2_rh:document.getElementById('p2_rh').value,
-    p2_sd:document.getElementById('p2_sd').value,
-    p2_gap:document.getElementById('p2_gap').value,p2_weight:document.getElementById('p2_weight').value,
   }));}catch(e){}
 }
 function loadState() {
   try{
     const st=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
-    const s=(id,v)=>{if(v!==undefined&&v!=='')document.getElementById(id).value=v;};
+    const s=(id,v)=>{if(v!==undefined&&v!==''){const el=document.getElementById(id);if(el)el.value=v;}};
     s('containerSelect',st.container);s('cL',st.cL);s('cW',st.cW);s('cH',st.cH);
     s('p_d',st.p_d);s('p_ch',st.p_ch);s('p_s',st.p_s);s('p_sh',st.p_sh);
     s('p_l',st.p_l);s('p_w',st.p_w);s('p_rh',st.p_rh);s('p_sd',st.p_sd);
@@ -1139,6 +1262,11 @@ function init() {
   initDrag();
   drawEmpty3D();
   initMobileTabs();
+  seedPack0FromLegacy();
+  renderPacksPanel();
+  document.querySelectorAll('input[name=splitAxis]').forEach(r => {
+    r.addEventListener('change', e => { splitAxis = e.target.value; });
+  });
   window.addEventListener('resize',()=>{if(lastViz)draw3D(...lastViz);else drawEmpty3D();});
 }
 
@@ -1195,6 +1323,7 @@ function setOrientation(o){orientation=o;['z','x','y'].forEach(x=>document.getEl
 function setMode(m){
   if(isDemo&&m==='suggest'){alert('💡 Suggest Size is a full-version feature.\nContact hovanphapbk@gmail.com for a license.');return;}
   outputMode=m;['auto','custom','suggest'].forEach(x=>document.getElementById('mode_'+x).classList.toggle('ao',x===m));document.getElementById('custom_wrap').style.display=m==='custom'?'block':'none';document.getElementById('suggest_wrap').style.display=m==='suggest'?'block':'none';
+  renderPacksPanel();
 }
 
 function getGapCm(){return(parseFloat(document.getElementById('p_gap').value)||0)/10;}// mm→cm
@@ -1937,19 +2066,11 @@ function refreshCustomPresetsDropdown(){
 // SECONDARY PACKAGE (MIXED LOAD)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function togglePkg2(){
-  if(isDemo){alert('⬡ Mixed Load is a full-version feature.\nContact hovanphapbk@gmail.com for a license.');return;}
-  pkg2Enabled=!pkg2Enabled;
-  document.getElementById('pkg2Body').style.display=pkg2Enabled?'block':'none';
-  const badge=document.getElementById('pkg2Badge');
-  badge.textContent=pkg2Enabled?'ON':'OFF';
-  badge.className='pkg2-badge '+(pkg2Enabled?'pkg2-on':'pkg2-off');
+  // Legacy no-op: secondary-package UI replaced by Packs panel. Task 10 removes fully.
 }
 function setType2(type){
+  // Legacy no-op: secondary-package UI replaced by Packs panel. Task 10 removes fully.
   pkg2Type=type;
-  ['cylinder','square','rect','sphere'].forEach(t=>{
-    document.getElementById('inputs2_'+t).style.display=t===type?'block':'none';
-    document.getElementById('btn2_'+t).classList.toggle('ab',t===type);
-  });
 }
 function getPkgDims2(){
   const g=(parseFloat(document.getElementById('p2_gap').value)||0)/10;
