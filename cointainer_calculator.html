@@ -183,6 +183,10 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 .leg-item{display:flex;align-items:center;gap:4px}
 .leg-dot{width:9px;height:9px;border-radius:2px;flex-shrink:0}
 .viz-footer{padding:3px 0 6px;font-size:0.64rem;color:#484f58;text-align:center;flex-shrink:0}
+.btn-fullscreen{background:#21262d;border:1px solid #30363d;color:#c9d1d9;padding:3px 10px;border-radius:5px;cursor:pointer;font-size:0.72rem;transition:all .15s}
+.btn-fullscreen:hover{background:#30363d;border-color:#58a6ff;color:#58a6ff}
+#viz3dWrap:fullscreen{background:#0d1117;padding:20px;box-sizing:border-box}
+#viz3dWrap:fullscreen canvas{width:100%!important;height:100%!important;max-height:calc(100vh - 40px)}
 
 /* ── Weight warning ── */
 .wt-warn{padding:5px 9px;border-radius:5px;font-size:0.75rem;margin-top:5px}
@@ -576,15 +580,19 @@ input[type=range]{width:65px;accent-color:#58a6ff}
         <button class="rot-btn" id="vSE" onclick="setPreset(315)">SE</button>
         <span style="color:#484f58">|</span>
         <div class="el-wrap">Elev<input type="range" id="elevSlider" min="15" max="60" value="30" oninput="onElevChange()"></div>
+        <span style="color:#484f58">|</span>
+        <button id="btn3dFull" class="btn-fullscreen" onclick="toggle3dFullscreen()" title="Fullscreen 3D (Esc to exit)">⛶ Fullscreen</button>
       </div>
     </div>
     <div class="canvas-wrap" id="canvasWrap">
+      <div id="viz3dWrap" style="width:100%;height:100%;position:relative">
       <canvas id="viz3d"></canvas>
       <div class="legend" id="legend3d" style="display:none">
         <div class="leg-item"><div class="leg-dot" style="background:#3fb950"></div>Loaded</div>
         <div class="leg-item"><div class="leg-dot" style="background:#f85149"></div>Overload</div>
         <div class="leg-item"><div class="leg-dot" style="background:rgba(56,139,253,0.3);border:1px solid #388bfd"></div>Unused space</div>
       </div>
+      </div><!-- /viz3dWrap -->
     </div>
     <div class="viz-footer">Drag canvas to rotate · Blue overlay = unused container space</div>
   </div>
@@ -1405,6 +1413,25 @@ function init() {
   }
   window.addEventListener('resize',()=>{if(lastViz)draw3D(...lastViz);else drawEmpty3D();});
   initPanelResizer();
+  document.addEventListener('fullscreenchange', () => {
+    // Redraw 3D after enter/exit fullscreen so canvas size matches wrap.
+    setTimeout(() => {
+      if(lastViz && Array.isArray(lastViz) && lastViz.length === 2) draw3D(...lastViz);
+      else drawEmpty3D();
+    }, 60);
+  });
+}
+
+function toggle3dFullscreen(){
+  const el = document.getElementById('viz3dWrap') || document.getElementById('viz3d').parentElement;
+  if(!el) return;
+  if(!document.fullscreenElement){
+    if(el.requestFullscreen) el.requestFullscreen();
+    else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  } else {
+    if(document.exitFullscreen) document.exitFullscreen();
+    else if(document.webkitExitFullscreen) document.webkitExitFullscreen();
+  }
 }
 
 function initPanelResizer(){
