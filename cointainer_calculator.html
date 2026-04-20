@@ -195,8 +195,11 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 .pack-card { border:1px solid #30363d; border-left:4px solid var(--pack-color,#3fb950); border-radius:4px; padding:10px; margin-bottom:10px; background:#161b22; }
 .pack-card-hdr { display:flex; justify-content:space-between; align-items:center; font-weight:600; margin-bottom:6px; color:#c9d1d9; }
 .pack-color-swatch { display:inline-block; width:12px; height:12px; border-radius:2px; margin-right:6px; vertical-align:middle; }
-.pack-card label { display:inline-flex; align-items:center; gap:4px; margin:2px 8px 2px 0; font-size:13px; color:#c9d1d9; }
-.pack-card input[type=number], .pack-card select { background:#0d1117; border:1px solid #30363d; color:#c9d1d9; padding:2px 6px; border-radius:3px; width:70px; }
+.pack-card label { display:flex; align-items:center; gap:6px; margin:4px 0; font-size:13px; color:#c9d1d9; }
+.pack-card label > input[type=number], .pack-card label > select { flex:1; }
+.pack-card .pack-dims { display:grid; grid-template-columns:1fr 1fr; gap:5px 8px; margin:4px 0; }
+.pack-card .pack-dims label { margin:0; }
+.pack-card input[type=number], .pack-card select { background:#0d1117; border:1px solid #30363d; color:#c9d1d9; padding:3px 7px; border-radius:3px; min-width:70px; width:auto; max-width:140px; box-sizing:border-box; }
 .alloc-row { display:flex; align-items:center; gap:8px; margin:6px 0; }
 .alloc-row input[type=range] { flex:1; }
 .btn-remove { background:#da3633; color:#fff; border:none; border-radius:4px; padding:2px 8px; cursor:pointer; font-size:12px; }
