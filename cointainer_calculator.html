@@ -1232,6 +1232,35 @@ function getPkgDims() {
   }
   return{...raw,gap:g,effL:raw.footL+g,effW:raw.footW+g,effH:raw.stackH+g};
 }
+
+// ───────── Multi-pack helpers ─────────
+function getPackDims(idx){
+  const p = packs[idx];
+  if(!p) return null;
+  return packDimsToPkgObj(p);
+}
+
+function packDimsToPkgObj(p){
+  const gap = p.gap || 0;
+  let footL, footW, stackH, vol;
+  switch(p.shape){
+    case 'cylinder': footL = footW = p.dims.d; stackH = p.dims.h;
+                     vol = Math.PI*Math.pow(p.dims.d/2,2)*p.dims.h; break;
+    case 'square':   footL = footW = p.dims.s; stackH = p.dims.h;
+                     vol = p.dims.s*p.dims.s*p.dims.h; break;
+    case 'rectangle':
+    case 'rect':     footL = p.dims.l; footW = p.dims.w; stackH = p.dims.h;
+                     vol = p.dims.l*p.dims.w*p.dims.h; break;
+    case 'sphere':   footL = footW = p.dims.d; stackH = p.dims.d;
+                     vol = (4/3)*Math.PI*Math.pow(p.dims.d/2,3); break;
+    case 'wedge':    footL = p.dims.l; footW = p.dims.w; stackH = p.dims.h;
+                     vol = 0.5*p.dims.l*p.dims.w*p.dims.h; break;
+    case 'bag':      footL = p.dims.l; footW = p.dims.w; stackH = p.dims.h;
+                     vol = p.dims.l*p.dims.w*p.dims.h; break;
+  }
+  return { type:p.shape, footL, footW, stackH, vol, gap, weight:p.weight, color:p.color };
+}
+
 function getPkgVolume() {
   if(pkgType==='cylinder'){const d=parseFloat(document.getElementById('p_d').value)||0,h=parseFloat(document.getElementById('p_ch').value)||0;return Math.PI*(d/2)*(d/2)*h;}
   if(pkgType==='square'){const s=parseFloat(document.getElementById('p_s').value)||0,h=parseFloat(document.getElementById('p_sh').value)||0;return s*s*h;}
