@@ -215,6 +215,13 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 .sug-table tr.s-best td{background:rgba(63,185,80,.07)}
 .sug-table tr.s-exact td{background:rgba(78,204,163,.1);outline:1px solid rgba(78,204,163,.4)}
 .sug-table tr.s-sel td{background:rgba(56,139,253,.08)}
+.suggest-panel { border:1px solid #30363d; border-radius:6px; padding:10px; background:#0d1117; color:#c9d1d9; }
+.suggest-panel label { display:inline-flex; gap:4px; align-items:center; margin:2px 6px 2px 0; font-size:13px; }
+.suggest-panel input[type=number], .suggest-panel select { background:#0d1117; border:1px solid #30363d; color:#c9d1d9; padding:2px 6px; border-radius:3px; width:70px; }
+.suggest-mode-row { margin-bottom:8px; }
+.sg-lock { background:#21262d; border:1px solid #30363d; color:#c9d1d9; border-radius:3px; padding:2px 6px; cursor:pointer; font-size:12px; }
+.sg-lock[data-locked="1"] { background:#1f6feb; color:#fff; }
+.sg-min { width:50px !important; }
 .apply-btn{padding:2px 8px;background:transparent;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer;font-size:0.68rem;transition:all .15s}
 .apply-btn:hover{border-color:#58a6ff;color:#58a6ff}
 .match-exact{color:#4ecca3;font-weight:700}
@@ -484,7 +491,32 @@ input[type=range]{width:65px;accent-color:#58a6ff}
       <div class="fg"><label>Number of Packages</label><input type="number" id="pkg_count" min="1" step="1" value="100"></div>
     </div>
     <div id="suggest_wrap" style="display:none">
-      <div class="fg"><label>Target count (optional)</label><input type="number" id="sug_target" min="1" step="1" placeholder="e.g. 100 — leave blank for best vol%"></div>
+      <div class="suggest-panel" id="suggestPanel">
+        <div class="suggest-mode-row">
+          Mode:
+          <label><input type="radio" name="sgMode" value="all" checked> Auto all</label>
+          <label><input type="radio" name="sgMode" value="partial"> Auto partial</label>
+        </div>
+        <div id="sgAllBlock">
+          <label>Target count (optional): <input type="number" id="sug_target" min="0" placeholder="blank = best vol%"></label>
+        </div>
+        <div id="sgPartialBlock" style="display:none">
+          <label>Shape: <select id="sgShape">
+            <option value="cylinder">cylinder</option>
+            <option value="square">square</option>
+            <option value="rect">rectangle</option>
+            <option value="sphere">sphere</option>
+            <option value="wedge">wedge</option>
+            <option value="bag">bag</option>
+          </select></label>
+          <div id="sgPartialDims"></div>
+        </div>
+        <details class="advanced" style="margin-top:8px">
+          <summary>Advanced: min-dim overrides</summary>
+          <div id="sgAdvancedBody" style="margin-top:6px;font-size:13px"></div>
+        </details>
+        <button onclick="runSuggestFromPanel()" style="margin-top:8px">Run Suggest</button>
+      </div>
     </div>
     <div id="calc_err" class="err" style="display:none"></div>
     <button class="cbtn" onclick="calculate()">⚡ Calculate</button>
@@ -1251,6 +1283,23 @@ function init() {
   document.querySelectorAll('input[name=splitAxis]').forEach(r => {
     r.addEventListener('change', e => { splitAxis = e.target.value; });
   });
+  // Wire Suggest-panel mode radios + shape dropdown + advanced overrides
+  const sgRadios = document.querySelectorAll('input[name=sgMode]');
+  if(sgRadios.length){
+    sgRadios.forEach(r => {
+      r.addEventListener('change', e => {
+        const v = e.target.value;
+        const allBlk = document.getElementById('sgAllBlock');
+        const partBlk = document.getElementById('sgPartialBlock');
+        if(allBlk) allBlk.style.display = v === 'all' ? '' : 'none';
+        if(partBlk) partBlk.style.display = v === 'partial' ? '' : 'none';
+        if(v === 'partial') renderSgPartialDims();
+      });
+    });
+    const sgShape = document.getElementById('sgShape');
+    if(sgShape) sgShape.addEventListener('change', renderSgPartialDims);
+    renderSgAdvanced();
+  }
   window.addEventListener('resize',()=>{if(lastViz)draw3D(...lastViz);else drawEmpty3D();});
 }
 
@@ -2203,6 +2252,70 @@ function runSuggestSize(c, shape, lockedDims, target){
   const top = results.slice(0,15);
   renderSuggest(top, target, c, shape);
   return top;
+}
+
+function renderSgPartialDims(){
+  const shape = document.getElementById('sgShape').value;
+  const keys = {
+    cylinder:['d','h'], square:['s','h'],
+    rect:['l','w','h'], rectangle:['l','w','h'], sphere:['d'],
+    wedge:['l','w','h'], bag:['l','w','h']
+  }[shape] || [];
+  document.getElementById('sgPartialDims').innerHTML = keys.map(k => `
+    <div>
+      <label>${k.toUpperCase()}: <input type="number" class="sg-dim" data-key="${k}" min="0"></label>
+      <button class="sg-lock" data-key="${k}" data-locked="0">🔓 auto</button>
+    </div>
+  `).join('');
+  document.querySelectorAll('#sgPartialDims .sg-lock').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const locked = e.currentTarget.dataset.locked === '1';
+      e.currentTarget.dataset.locked = locked ? '0' : '1';
+      e.currentTarget.textContent = locked ? '🔓 auto' : '🔒 locked';
+    });
+  });
+}
+
+function renderSgAdvanced(){
+  const body = document.getElementById('sgAdvancedBody');
+  if(!body) return;
+  body.innerHTML = Object.entries(SHAPE_MIN_DEFAULTS)
+    .filter(([s]) => s !== 'rectangle')
+    .map(([shape, mins]) => `
+      <div><b>${shape}:</b> ${Object.entries(mins).map(([k,v]) => `
+        ${k.toUpperCase()} ≥ <input class="sg-min" data-shape="${shape}" data-key="${k}" type="number" value="${v}" min="1">
+      `).join(' ')}</div>
+    `).join('');
+  body.querySelectorAll('.sg-min').forEach(inp => {
+    inp.addEventListener('input', e => {
+      const s = e.target.dataset.shape, k = e.target.dataset.key;
+      shapeMinOverrides[s] = shapeMinOverrides[s] || {};
+      shapeMinOverrides[s][k] = +e.target.value;
+      // rect is an alias of rectangle — keep in sync
+      if(s === 'rect'){ shapeMinOverrides.rectangle = shapeMinOverrides.rectangle || {}; shapeMinOverrides.rectangle[k] = +e.target.value; }
+    });
+  });
+}
+
+function runSuggestFromPanel(){
+  const sgMode = document.querySelector('input[name=sgMode]:checked')?.value || 'all';
+  const c = getContainerDims();
+  let locked = {};
+  let shape;
+  if(sgMode === 'partial'){
+    shape = document.getElementById('sgShape').value;
+    document.querySelectorAll('#sgPartialDims .sg-lock').forEach(btn => {
+      if(btn.dataset.locked === '1'){
+        const key = btn.dataset.key;
+        const val = +document.querySelector(`#sgPartialDims .sg-dim[data-key="${key}"]`)?.value;
+        if(val > 0) locked[key] = val;
+      }
+    });
+  } else {
+    shape = (packs[0] && packs[0].shape) || pkgType;
+  }
+  const target = +(document.getElementById('sug_target')?.value) || 0;
+  runSuggestSize(c, shape, locked, target);
 }
 
 function renderSuggest(rows,target,c,shape){
