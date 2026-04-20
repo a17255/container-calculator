@@ -10,6 +10,7 @@
 2. Improve **Suggest Size** so it returns realistic dimensions (no more 1cm × 5cm oil barrels) and adds a **partial-auto** sub-mode where the user locks some dimensions and auto-fills the rest.
 3. Make all output modes (Max Capacity, Custom Qty, Suggest Size) work with the multi-pack model.
 4. Let the user choose how the container is split between packs (axis **L / W / H**) and what fraction each pack gets.
+5. Add a **5-calculation soft limit** for demo users to nudge toward licensing.
 
 ## 2. Out of Scope (YAGNI)
 
@@ -208,6 +209,21 @@ Demo restrictions remain as today, adapted to the new model:
 - Watermark unchanged.
 - Max Capacity and Custom Qty remain available in demo (single pack only).
 
+## 9a. Demo Calculation Limit
+
+Demo users get **5 successful Calculate runs per browser**. After the 5th, the Calculate button is disabled and a banner prompts for a license.
+
+- **Who:** `isDemo === true` only. Licensed users have no counter.
+- **Counter:** `localStorage` key `cpc_demo_calcs` (integer, default 0).
+- **Increment:** inside `calculate()`, only after the run completes successfully (no input errors, no alloc-sum failure). Invalid runs do not count.
+- **Gate:** at the top of `calculate()`, if `isDemo && cpc_demo_calcs >= 5`, return early and show banner.
+- **Banner** (new element `#demoLimitBanner`, hidden by default):
+  > "Demo limit reached (5/5 calculations). Enter a license key to continue — free for beta testers: hovanphapbk@gmail.com"
+  With a "Enter License" button that opens the existing lock screen.
+- **Reset:** when a valid license is activated via `tryUnlock()`, clear `cpc_demo_calcs`. No other reset path — this is intentional (browser-level nudge, not session-level).
+- **Counter display:** below the Calculate button in demo mode, show `"Demo: 3 / 5 calculations used"`. Updates live.
+- **Bypass awareness:** the user can clear localStorage to reset. This is acceptable for a sales nudge; the intent is friction, not enforcement.
+
 ## 10. Migration
 
 No user data persists (packs config is in-memory only), so no migration concerns. On first load:
@@ -257,6 +273,8 @@ Manual browser tests (no automated test suite in this project):
 10. **Demo mode** — "+ Add package" disabled, Suggest / Max Cap / Print disabled as today.
 11. **Remove Pack 2 (of 3)** — Pack 3 renumbers to Pack 2; alloc% rebalances; sum stays 100.
 12. **Weight overflow** — warning shown when total weight > container payload.
+13. **Demo calc limit** — run Calculate 5 times in demo; 6th click shows banner and does nothing. Counter displays "5 / 5." Activating a license clears counter.
+14. **Demo invalid runs** — in demo, clicking Calculate with alloc ≠ 100 does NOT increment counter.
 
 ## 13. Deployment
 
