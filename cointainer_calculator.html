@@ -1285,8 +1285,18 @@ function getPkgVolume() {
 }
 
 // Count formula with gap: N = floor((containerDim + gap) / (pkgDim + gap))
-function calcGrid(cl,cw,ch,p){
-  return{perL:Math.floor((cl+p.gap)/p.effL),perW:Math.floor((cw+p.gap)/p.effW),perH:Math.floor((ch+p.gap)/p.effH)};
+// Dual-signature:
+//   Legacy: calcGrid(cl, cw, ch, pkg)  where pkg has effL/effW/effH (pre-computed)
+//   New:    calcGrid(zoneLike, pkgObj) where pkgObj has footL/footW/stackH + gap
+function calcGrid(a,b,c,d){
+  if(typeof a === 'object' && a !== null){
+    const zone=a, p=b, gap=p.gap||0;
+    const perL=Math.max(0,Math.floor((zone.l+gap)/(p.footL+gap)));
+    const perW=Math.max(0,Math.floor((zone.w+gap)/(p.footW+gap)));
+    const perH=Math.max(0,Math.floor((zone.h+gap)/(p.stackH+gap)));
+    return {perL, perW, perH, count: perL*perW*perH};
+  }
+  return{perL:Math.floor((a+d.gap)/d.effL),perW:Math.floor((b+d.gap)/d.effW),perH:Math.floor((c+d.gap)/d.effH)};
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1300,56 +1310,77 @@ function calculate() {
   clearErr();
   const c=getContainerDims();
   if(outputMode==='suggest'){saveState();runSuggestSize(c);return;}
-  const p=getPkgDims();
-  if(p.footL<=0||p.footW<=0||p.stackH<=0){showErr('Package dimensions must be > 0.');return;}
-  if(p.footL>c.l||p.footW>c.w||p.stackH>c.h){
-    const d=p.footL>c.l?`L ${p.footL}>${c.l}cm`:p.footW>c.w?`W ${p.footW}>${c.w}cm`:`H ${p.stackH}>${c.h}cm`;
-    showErr('Package larger than container! ('+d+')');return;
-  }
-  const{perL,perW,perH}=calcGrid(c.l,c.w,c.h,p);
-  const maxCount=perL*perW*perH;
-  if(maxCount===0){showErr('Package does not fit with these dimensions.');return;}
 
-  // Zone 2: secondary package fills remaining height above zone 1
-  let zone2=null;
-  if(pkg2Enabled){
-    const p2=getPkgDims2();
-    const z2H=c.h-perH*p.stackH;
-    if(p2.footL>0&&p2.footW>0&&p2.stackH>0&&p2.footL<=c.l&&p2.footW<=c.w&&z2H>=p2.stackH){
-      const g2=calcGrid(c.l,c.w,z2H,p2);
-      const cnt2=g2.perL*g2.perW*g2.perH;
-      if(cnt2>0) zone2={perL:g2.perL,perW:g2.perW,perH:g2.perH,p:p2,count:cnt2,zOffset:perH*p.stackH};
+  // Allocation sum validation
+  const allocSum=packs.reduce((a,p)=>a+(p.allocPct||0),0);
+  if(Math.abs(allocSum-100)>0.5){
+    showErr('Pack allocation must sum to 100% (current: '+allocSum.toFixed(0)+'%).');return;
+  }
+
+  // Build pkg objects per pack. For pack 0, use getPkgDims() so orientation
+  // from DOM is preserved (single-pack behavior must match legacy).
+  const axisForCalc=(splitAxis==='auto')?'L':splitAxis;
+  const zones=computePackZones(c,axisForCalc,packs);
+  const zoneResults=[];
+  let totalCount=0, totalVol=0, totalWeight=0;
+  const pkgObjs=[];
+  for(let i=0;i<packs.length;i++){
+    let pkgObj;
+    if(i===0){
+      // Primary pack: use legacy getPkgDims() to honor orientation + gap(mm→cm).
+      const base=getPkgDims();
+      pkgObj={
+        type:packs[i].shape, footL:base.footL, footW:base.footW, stackH:base.stackH,
+        gap:base.gap, vol:getPkgVolume(),
+        weight:packs[i].weight||(parseFloat(document.getElementById('p_weight').value)||0),
+        color:packs[i].color
+      };
+    } else {
+      pkgObj=getPackDims(i);
+    }
+    pkgObjs.push(pkgObj);
+    if(!pkgObj||!pkgObj.footL||!pkgObj.stackH){ continue; }
+    const z=zones[i];
+    const grid=calcGrid(z,pkgObj);
+    zoneResults.push({ pack:packs[i], pkgObj, zone:z, grid });
+    totalCount+=grid.count;
+    totalVol+=grid.count*(pkgObj.vol||0);
+    totalWeight+=grid.count*(pkgObj.weight||0);
+  }
+
+  // Primary-pack size/fit checks (preserve legacy error UX for single-pack usage)
+  if(pkgObjs.length>0){
+    const p0=pkgObjs[0];
+    if(p0.footL<=0||p0.footW<=0||p0.stackH<=0){showErr('Package dimensions must be > 0.');return;}
+    if(p0.footL>c.l||p0.footW>c.w||p0.stackH>c.h){
+      const d=p0.footL>c.l?`L ${p0.footL}>${c.l}cm`:p0.footW>c.w?`W ${p0.footW}>${c.w}cm`:`H ${p0.stackH}>${c.h}cm`;
+      showErr('Package larger than container! ('+d+')');return;
     }
   }
-
-  const cVol=c.l*c.w*c.h;
-  const pVol=getPkgVolume();
-  const usedBBox=perL*p.footL*perW*p.footW*perH*p.stackH;
-  const edgeRemVol=(cVol-usedBBox)/1e6;
-  const internalGapVol=maxCount*(p.footL*p.footW*p.stackH-pVol)/1e6;
-  const totalEmptyVol=(cVol-pVol*maxCount)/1e6;
-  const volUtil=pVol*maxCount/cVol*100;
-  const remL=c.l-perL*p.footL, remW=c.w-perW*p.footW, remH=c.h-perH*p.stackH;
-
-  const pkgWeight=parseFloat(document.getElementById('p_weight').value)||0;
-  const totalWeight=pkgWeight>0?pkgWeight*maxCount:null;
-  const payload=c.payload||null;
+  if(zoneResults.length===0||totalCount===0){
+    showErr('Package does not fit with these dimensions.');return;
+  }
 
   saveState();
-  buildComparisonTable(p, pkgWeight);
 
-  if(outputMode==='auto') {
-    renderResult({mode:'auto',maxCount,perL,perW,perH,cVol,pVol,volUtil,edgeRemVol,internalGapVol,totalEmptyVol,remL,remW,remH,totalWeight,payload,c,p,zone2});
-    lastViz=[perL,perH,perW,c,p,maxCount,maxCount,zone2];
-  } else {
+  // Comparison table: only meaningful for single-pack flow (primary shape)
+  if(packs.length===1){
+    const p=getPkgDims();
+    const pkgWeight=parseFloat(document.getElementById('p_weight').value)||0;
+    buildComparisonTable(p, pkgWeight);
+  }
+
+  // Custom-count mode: honor user count as display cap; keep maxCount for per-pack grid
+  let modeOut=outputMode;
+  if(outputMode==='custom'){
     const inputCount=parseInt(document.getElementById('pkg_count').value)||0;
     if(inputCount<=0){showErr('Enter count ≥ 1.');return;}
-    const status=inputCount===maxCount?'full':inputCount>maxCount?'overload':'partial';
-    const fillPct=Math.min(inputCount/maxCount*100,100);
-    const twCustom=pkgWeight>0?pkgWeight*inputCount:null;
-    renderResult({mode:'custom',inputCount,maxCount,status,fillPct,perL,perW,perH,cVol,pVol,volUtil,edgeRemVol,totalEmptyVol,remL,remW,remH,totalWeight:twCustom,payload,c,p,zone2});
-    lastViz=[perL,perH,perW,c,p,inputCount,maxCount,zone2];
+    // attach to zoneResults[0] only (legacy behavior)
+    zoneResults[0].inputCount=inputCount;
   }
+
+  renderResult({ mode:modeOut, container:c, zoneResults, totalCount, totalVol, totalWeight });
+  lastViz=[c, zoneResults];
   draw3D(...lastViz);
   if(isMobile())switchMobileTab('3d');
 }
@@ -1360,8 +1391,43 @@ function calculate() {
 function fmtN(n){return Math.round(n).toLocaleString();}
 function fmtM3(v){return v.toFixed(3);}
 
-function renderResult(r) {
-  const el=document.getElementById('rbar');
+function modeLabel(m){
+  return m==='auto'?'🎯 Max Capacity'
+       :m==='custom'?'📦 Custom Qty'
+       :m==='suggest'?'🔍 Suggest Size':m;
+}
+
+function renderResult(r){
+  const rb=document.getElementById('rbar');
+  if(!rb) return;
+  if(r && r.zoneResults){
+    const { mode, container, zoneResults, totalCount, totalVol, totalWeight } = r;
+    const containerVol = container.l*container.w*container.h;
+    const utilPct = containerVol>0 ? (totalVol/containerVol*100) : 0;
+    const payloadKg = container.payload || 0;
+    const weightOK = payloadKg<=0 || totalWeight<=payloadKg;
+    const lines=[];
+    lines.push(`Mode: ${modeLabel(mode)}  |  Split: ${splitAxis==='auto'?'auto':splitAxis}`);
+    for(const zr of zoneResults){
+      const p=zr.pack, g=zr.grid, z=zr.zone;
+      lines.push(
+        `<span style="display:inline-block;width:10px;height:10px;background:${p.color};margin-right:6px;vertical-align:middle;border-radius:2px"></span>`
+        +`Pack ${p.id} (${p.shape}): <b>${fmtN(g.count)}</b> units · `
+        +`Grid ${g.perL}×${g.perW}×${g.perH} · `
+        +`Zone ${Math.round(z.l)}×${Math.round(z.w)}×${Math.round(z.h)} cm`
+      );
+    }
+    const wtStr = totalWeight>0
+      ? `${fmtN(totalWeight)} kg ${weightOK?'✓':'⚠ over payload'}`
+      : '—';
+    lines.push(
+      `<b>Total: ${fmtN(totalCount)} packages</b>  ·  Vol util: <b>${utilPct.toFixed(1)}%</b>  ·  Weight: ${wtStr}`
+    );
+    rb.innerHTML=lines.map(l=>`<div class="info-line">${l}</div>`).join('');
+    return;
+  }
+  // ── Legacy path (unreachable post-Task-4 but retained as fallback) ──
+  const el=rb;
   let h='';
 
   const weightHtml=()=>{
@@ -1652,7 +1718,43 @@ function drawRemSpace(ctx,perL,perW,perH,c,p,sc,ox,oy,totalUsedH=null){
 }
 function mkR(a,b,s){const r=[];for(let i=a;s>0?i<=b:i>=b;i+=s)r.push(i);return r;}
 
-function draw3D(perL,perH,perW,c,p,actualCount,maxCount,zone2=null){
+// Dispatch to the right shape drawer for a given pkgObj at world (x,y,z).
+// Uses pack color + derived light/stroke variants. For cylinder, honors
+// orientation (z default; x/y only applicable to primary pack via legacy flag).
+function drawPkg3d(ctx, type, wx, wy, wz, p, baseColor, sc, ox, oy, isPrimary){
+  const cF = baseColor;
+  const cT = lc(baseColor, 35);
+  const cS = dc(baseColor, 35);
+  const cSt = 'rgba(0,0,0,0.25)';
+  switch(type){
+    case 'cylinder':
+      if(isPrimary && orientation==='x'){
+        drawCylXaxis(ctx, wx, wy+p.footW/2, wz+p.stackH/2, p.footW/2, p.footL, sc, ox, oy, cT, cF, cSt);
+      } else if(isPrimary && orientation==='y'){
+        drawCylYaxis(ctx, wx+p.footL/2, wy, wz+p.stackH/2, p.footL/2, p.footW, sc, ox, oy, cT, cF, cSt);
+      } else {
+        drawCyl3d(ctx, wx+p.footL/2, wy+p.footW/2, wz, p.footL/2, p.stackH, sc, ox, oy, cT, cF, cSt);
+      }
+      return;
+    case 'sphere':
+      drawSphere3d(ctx, wx+p.footL/2, wy+p.footW/2, wz, p.footL/2, sc, ox, oy, cF, cSt);
+      return;
+    case 'wedge':
+      drawWedge3d(ctx, wx, wy, wz, p.footL, p.footW, p.stackH, sc, ox, oy, cT, cF, cS, cSt);
+      return;
+    case 'bag':
+      drawBag3d(ctx, wx, wy, wz, p.footL, p.footW, p.stackH, sc, ox, oy, cT, cF, cS, cSt);
+      return;
+    case 'square':
+    case 'rectangle':
+    case 'rect':
+    default:
+      drawBox3d(ctx, wx, wy, wz, p.footL, p.footW, p.stackH, sc, ox, oy, cT, cF, cS, cSt);
+      return;
+  }
+}
+
+function draw3D(c, zoneResults){
   const canvas=document.getElementById('viz3d');
   const wrap=document.getElementById('canvasWrap');
   const W=wrap.offsetWidth||800,H=wrap.offsetHeight||500;
@@ -1661,48 +1763,42 @@ function draw3D(perL,perH,perW,c,p,actualCount,maxCount,zone2=null){
   ctx.fillStyle='#0d1117';ctx.fillRect(0,0,W,H);
   const{sc,ox,oy}=computeFit(c.l,c.w,c.h,W,H);
   const az=viewAz,cosAz=Math.cos(az),sinAz=Math.sin(az);
-  const xR=cosAz>=0?mkR(0,perL-1,1):mkR(perL-1,0,-1);
-  const yR=sinAz>=0?mkR(0,perW-1,1):mkR(perW-1,0,-1);
-  const zR=mkR(0,perH-1,1);
-  const MAX=isDemo?200:8000;let count=0,drawn=0;
-  const isCyl=pkgType==='cylinder',isSph=pkgType==='sphere',isWedge=pkgType==='wedge',isBag=pkgType==='bag';
-  for(const iz of zR)for(const iy of yR)for(const ix of xR){
-    if(drawn>=MAX){count++;continue;}
-    if(count>=actualCount){count++;continue;}
-    const over=count>=maxCount;
-    const wx=ix*p.footL,wy=iy*p.footW,wz=iz*p.stackH;
-    let cT,cF,cS,cSt;
-    if(over){cT='#f8808a';cF='#f85149';cS='#c0302a';cSt='rgba(200,40,30,0.4)';}
-    else    {cT='#56d68a';cF='#3fb950';cS='#278a36';cSt='rgba(40,160,70,0.3)';}
-    if(isCyl){
-      if(orientation==='z')drawCyl3d(ctx,wx+p.footL/2,wy+p.footW/2,wz,p.footL/2,p.stackH,sc,ox,oy,cT,cF,cSt);
-      else if(orientation==='x')drawCylXaxis(ctx,wx,wy+p.footW/2,wz+p.stackH/2,p.footW/2,p.footL,sc,ox,oy,cT,cF,cSt);
-      else drawCylYaxis(ctx,wx+p.footL/2,wy,wz+p.stackH/2,p.footL/2,p.footW,sc,ox,oy,cT,cF,cSt);
+  const MAX=isDemo?200:8000;
+  let drawnTotal=0, requestedTotal=0;
+
+  for(let zi=0; zi<zoneResults.length; zi++){
+    const zr=zoneResults[zi];
+    const { grid, pkgObj, zone, pack } = zr;
+    const color = pack.color || pkgObj.color || '#3fb950';
+    const isPrimary = (zi===0);
+    const gap = pkgObj.gap || 0;
+    const stepL = pkgObj.footL + gap;
+    const stepW = pkgObj.footW + gap;
+    const stepH = pkgObj.stackH + gap;
+    const drawLimit = (zr.inputCount!==undefined) ? zr.inputCount : grid.count;
+    requestedTotal += drawLimit;
+    const xR=cosAz>=0?mkR(0,grid.perL-1,1):mkR(grid.perL-1,0,-1);
+    const yR=sinAz>=0?mkR(0,grid.perW-1,1):mkR(grid.perW-1,0,-1);
+    const zR=mkR(0,grid.perH-1,1);
+    let placed=0;
+    outer:
+    for(const iz of zR)for(const iy of yR)for(const ix of xR){
+      if(placed>=drawLimit) break outer;
+      if(drawnTotal>=MAX) break outer;
+      const wx=zone.offL + ix*stepL;
+      const wy=zone.offW + iy*stepW;
+      const wz=zone.offH + iz*stepH;
+      drawPkg3d(ctx, pkgObj.type, wx, wy, wz, pkgObj, color, sc, ox, oy, isPrimary);
+      placed++; drawnTotal++;
     }
-    else if(isSph)  drawSphere3d(ctx,wx+p.footL/2,wy+p.footW/2,wz,p.footL/2,sc,ox,oy,cF,cSt);
-    else if(isWedge)drawWedge3d(ctx,wx,wy,wz,p.footL,p.footW,p.stackH,sc,ox,oy,cT,cF,cS,cSt);
-    else if(isBag)  drawBag3d(ctx,wx,wy,wz,p.footL,p.footW,p.stackH,sc,ox,oy,cT,cF,cS,cSt);
-    else            drawBox3d(ctx,wx,wy,wz,p.footL,p.footW,p.stackH,sc,ox,oy,cT,cF,cS,cSt);
-    drawn++;count++;
+    if(drawnTotal>=MAX) break;
   }
-  // Zone 2 (secondary packages)
-  if(zone2){
-    const{perL:pL2,perH:pH2,perW:pW2,p:p2,count:cnt2,zOffset}=zone2;
-    const xR2=cosAz>=0?mkR(0,pL2-1,1):mkR(pL2-1,0,-1);
-    const yR2=sinAz>=0?mkR(0,pW2-1,1):mkR(pW2-1,0,-1);
-    const isCyl2=pkg2Type==='cylinder',isSph2=pkg2Type==='sphere';
-    let cnt2drawn=0,cnt2iter=0;
-    for(const iz of mkR(0,pH2-1,1))for(const iy of yR2)for(const ix of xR2){
-      if(cnt2drawn>=MAX||cnt2iter>=cnt2){cnt2iter++;continue;}
-      const wx=ix*p2.footL,wy=iy*p2.footW,wz=zOffset+iz*p2.stackH;
-      if(isCyl2)     drawCyl3d(ctx,wx+p2.footL/2,wy+p2.footW/2,wz,p2.footL/2,p2.stackH,sc,ox,oy,'#72e5c0','#4ecca3','rgba(78,204,163,0.35)');
-      else if(isSph2)drawSphere3d(ctx,wx+p2.footL/2,wy+p2.footW/2,wz,p2.footL/2,sc,ox,oy,'#4ecca3','rgba(78,204,163,0.35)');
-      else           drawBox3d(ctx,wx,wy,wz,p2.footL,p2.footW,p2.stackH,sc,ox,oy,'#72e5c0','#4ecca3','#2a8a6a','rgba(78,204,163,0.35)');
-      cnt2drawn++;cnt2iter++;
-    }
+
+  // Unused-space hint: use primary zone's grid for legacy shading
+  if(zoneResults.length>0){
+    const zr0 = zoneResults[0];
+    drawRemSpace(ctx, zr0.grid.perL, zr0.grid.perW, zr0.grid.perH, c, zr0.pkgObj, sc, ox, oy, null);
   }
-  const totalUsedH=zone2?zone2.zOffset+zone2.perH*zone2.p.stackH:null;
-  drawRemSpace(ctx,perL,perW,perH,c,p,sc,ox,oy,totalUsedH);
   drawWire(ctx,c.l,c.w,c.h,sc,ox,oy);
   drawDoor(ctx,c.l,c.w,c.h,sc,ox,oy);
   drawAxisArrows(ctx,c.l,c.w,c.h,sc,ox,oy);
@@ -1713,14 +1809,23 @@ function draw3D(perL,perH,perW,c,p,actualCount,maxCount,zone2=null){
     ctx.globalAlpha=0.06;ctx.fillText('DEMO',0,72);ctx.restore();
   }
   ctx.fillStyle='#6e7681';ctx.font='10px Segoe UI';ctx.textAlign='left';
-  ctx.fillText(`Grid ${perL}×${perW}×${perH} | Az ${Math.round(az*180/Math.PI)}° | Drag to rotate`,8,H-8);
-  if(drawn>=MAX){ctx.fillStyle='#f0883e';ctx.textAlign='center';ctx.fillText(`Large dataset — showing ${MAX.toLocaleString()} of ${(perL*perW*perH).toLocaleString()} packages`,W/2,H-8);}
-  // Update legend dynamically
-  const leg=document.getElementById('legend3d');leg.style.display='flex';
-  leg.innerHTML=`<div class="leg-item"><div class="leg-dot" style="background:#3fb950"></div>${zone2?'Zone 1 (primary)':'Loaded'}</div>`
-    +(zone2?`<div class="leg-item"><div class="leg-dot" style="background:#4ecca3"></div>Zone 2 (secondary)</div>`:'')+
-    `<div class="leg-item"><div class="leg-dot" style="background:#f85149"></div>Overload</div>`+
-    `<div class="leg-item"><div class="leg-dot" style="background:rgba(56,139,253,0.3);border:1px solid #388bfd"></div>Unused space</div>`;
+  const firstGrid = zoneResults[0] ? zoneResults[0].grid : {perL:0,perW:0,perH:0};
+  ctx.fillText(`Grid ${firstGrid.perL}×${firstGrid.perW}×${firstGrid.perH} | Az ${Math.round(az*180/Math.PI)}° | Drag to rotate`,8,H-8);
+  if(drawnTotal>=MAX){
+    ctx.fillStyle='#f0883e';ctx.textAlign='center';
+    ctx.fillText(`Large dataset — showing ${MAX.toLocaleString()} of ${requestedTotal.toLocaleString()} packages`,W/2,H-8);
+  }
+
+  // Legend: per-pack chips + overload/unused
+  const leg=document.getElementById('legend3d');
+  if(leg){
+    leg.style.display='flex';
+    const packChips = zoneResults.map(zr =>
+      `<div class="leg-item"><div class="leg-dot" style="background:${zr.pack.color}"></div>Pack ${zr.pack.id} (${zr.pack.shape}): ${fmtN(zr.grid.count)}</div>`
+    ).join('');
+    leg.innerHTML = packChips +
+      `<div class="leg-item"><div class="leg-dot" style="background:rgba(56,139,253,0.3);border:1px solid #388bfd"></div>Unused space</div>`;
+  }
 }
 function drawEmpty3D(){
   const canvas=document.getElementById('viz3d');
