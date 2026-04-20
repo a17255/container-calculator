@@ -202,6 +202,9 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 .btn-remove { background:#da3633; color:#fff; border:none; border-radius:4px; padding:2px 8px; cursor:pointer; font-size:12px; }
 .btn-add-pack { background:#238636; color:#fff; border:none; border-radius:4px; padding:6px 12px; cursor:pointer; width:100%; margin-top:8px; }
 .btn-add-pack:disabled { background:#484f58; cursor:not-allowed; }
+.demo-banner { background:#4a2a00; color:#ffd33d; padding:10px; border-radius:6px; margin:10px 0; border:1px solid #8b6c00; }
+.demo-banner button { margin-left:10px; background:#1f6feb; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; }
+.demo-counter { font-size:12px; color:#8b949e; text-align:right; margin-top:4px; }
 .btn-suggest-pack { background:#1f6feb; color:#fff; border:none; border-radius:4px; padding:4px 10px; cursor:pointer; font-size:12px; margin-top:6px; }
 .alloc-sum { font-size:13px; font-weight:600; }
 .alloc-sum.bad { color:#f85149; }
@@ -324,6 +327,12 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 
 <!-- ══════════ APP ══════════ -->
 <div id="app">
+
+<div id="demoLimitBanner" class="demo-banner" style="display:none">
+  <b>Demo limit reached (5/5 calculations).</b>
+  Enter a license key to continue — free for beta testers: <a href="mailto:hovanphapbk@gmail.com" style="color:#58a6ff">hovanphapbk@gmail.com</a>
+  <button onclick="document.getElementById('lockScreen').style.display='flex'">Enter License</button>
+</div>
 
 <div class="hdr">
   <div class="hdr-icon" id="hdrIcon" title="Click 5× for admin">🚢</div>
@@ -520,6 +529,7 @@ input[type=range]{width:65px;accent-color:#58a6ff}
     </div>
     <div id="calc_err" class="err" style="display:none"></div>
     <button class="cbtn" onclick="calculate()">⚡ Calculate</button>
+    <div id="demoCounter" class="demo-counter" style="display:none"></div>
   </div>
 
 </div><!-- /left -->
@@ -714,6 +724,8 @@ async function checkStoredLicense() {
 }
 
 function unlockApp(expiry, email) {
+  isDemo=false;
+  try { localStorage.removeItem('cpc_demo_calcs'); } catch(e){}
   document.getElementById('lockScreen').style.display='none';
   document.getElementById('app').classList.add('unlocked');
   const today=new Date(); today.setHours(0,0,0,0); expiry.setHours(0,0,0,0);
@@ -977,11 +989,57 @@ function applyDemoRestrictions(){
   // Hide comparison, print
   document.getElementById('cmpWrap').style.display='none';
   document.querySelector('.print-btn').style.display='none';
-  // Add demo notice banner under header
-  const banner=document.createElement('div');
-  banner.style.cssText='background:rgba(240,136,62,.1);border-bottom:1px solid rgba(240,136,62,.3);padding:5px 16px;font-size:0.72rem;color:#f0883e;flex-shrink:0;display:flex;align-items:center;gap:10px';
-  banner.innerHTML='⚡ <b>Demo mode</b> — 3 containers · no HC variants · no Suggest Size · no Mixed Load · max 200 packages in 3D &nbsp;|&nbsp; <a href="mailto:hovanphapbk@gmail.com" style="color:#58a6ff;text-decoration:none">Get full license →</a>';
-  document.getElementById('app').insertBefore(banner,document.querySelector('.main'));
+  // Add demo notice banner under header (only once)
+  if(!document.getElementById('demoNoticeBanner')){
+    const banner=document.createElement('div');
+    banner.id='demoNoticeBanner';
+    banner.style.cssText='background:rgba(240,136,62,.1);border-bottom:1px solid rgba(240,136,62,.3);padding:5px 16px;font-size:0.72rem;color:#f0883e;flex-shrink:0;display:flex;align-items:center;gap:10px';
+    banner.innerHTML='⚡ <b>Demo mode</b> — 3 containers · no HC variants · no Suggest Size · no Mixed Load · max 200 packages in 3D · 5 calculations · single pack only &nbsp;|&nbsp; <a href="mailto:hovanphapbk@gmail.com" style="color:#58a6ff;text-decoration:none">Get full license →</a>';
+    document.getElementById('app').insertBefore(banner,document.querySelector('.main'));
+  }
+  // Task 15: lock to single pack
+  if(isDemo){
+    const addBtn=document.getElementById('btnAddPack');
+    if(addBtn) addBtn.disabled=true;
+    document.querySelectorAll('.btn-remove').forEach(b => b.style.display='none');
+    if(packs.length>1){
+      packs = packs.slice(0,1);
+      packs[0].allocPct = 100;
+      renderPacksPanel();
+    }
+  } else {
+    const addBtn=document.getElementById('btnAddPack');
+    if(addBtn) addBtn.disabled=(packs.length>=3);
+    document.querySelectorAll('.btn-remove').forEach(b => b.style.display='');
+  }
+  updateDemoCounterUI();
+}
+
+// Task 14: Demo 5-calc soft limit helpers
+const DEMO_LIMIT = 5;
+function demoCount(){ return +(localStorage.getItem('cpc_demo_calcs') || 0); }
+function demoBump(){
+  const n = demoCount() + 1;
+  try { localStorage.setItem('cpc_demo_calcs', String(n)); } catch(e){}
+  updateDemoCounterUI();
+}
+function demoReset(){
+  try { localStorage.removeItem('cpc_demo_calcs'); } catch(e){}
+  updateDemoCounterUI();
+}
+function updateDemoCounterUI(){
+  const counterEl = document.getElementById('demoCounter');
+  const bannerEl = document.getElementById('demoLimitBanner');
+  if(!counterEl || !bannerEl) return;
+  if(!isDemo){
+    counterEl.style.display = 'none';
+    bannerEl.style.display = 'none';
+    return;
+  }
+  const n = demoCount();
+  counterEl.style.display = '';
+  counterEl.textContent = `Demo: ${Math.min(n, DEMO_LIMIT)} / ${DEMO_LIMIT} calculations used`;
+  bannerEl.style.display = (n >= DEMO_LIMIT) ? '' : 'none';
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1099,6 +1157,11 @@ function renderPacksPanel(){
   if(btn) btn.disabled = packs.length >= 3;
   const autoLbl = document.getElementById('autoAxisLabel');
   if(autoLbl) autoLbl.style.display = (typeof outputMode !== 'undefined' && outputMode === 'auto') ? '' : 'none';
+  if(typeof isDemo !== 'undefined' && isDemo){
+    const addBtn = document.getElementById('btnAddPack');
+    if(addBtn) addBtn.disabled = true;
+    document.querySelectorAll('.btn-remove').forEach(b => b.style.display = 'none');
+  }
 }
 
 function packCardHTML(p, idx){
@@ -1308,6 +1371,7 @@ function init() {
   initMobileTabs();
   seedPack0FromLegacy();
   renderPacksPanel();
+  updateDemoCounterUI();
   document.querySelectorAll('input[name=splitAxis]').forEach(r => {
     r.addEventListener('change', e => { splitAxis = e.target.value; });
   });
@@ -1522,6 +1586,10 @@ function showErr(m){const e=document.getElementById('calc_err');e.textContent='�
 function clearErr(){document.getElementById('calc_err').style.display='none';}
 
 function calculate() {
+  if(typeof isDemo !== 'undefined' && isDemo && demoCount() >= DEMO_LIMIT){
+    updateDemoCounterUI();
+    return;
+  }
   syncPacksFromDOM();
   clearErr();
   const c=getContainerDims();
@@ -1606,6 +1674,7 @@ function calculate() {
   lastViz=[c, zoneResults];
   draw3D(...lastViz);
   if(isMobile())switchMobileTab('3d');
+  if(typeof isDemo !== 'undefined' && isDemo) demoBump();
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
