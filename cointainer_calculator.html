@@ -2081,8 +2081,52 @@ function refreshCustomPresetsDropdown(){
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SUGGEST SIZE MODE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function runSuggestSize(c){
-  const target=parseInt(document.getElementById('sug_target').value)||0;
+const SHAPE_MIN_DEFAULTS = {
+  cylinder:  { d:20, h:20 },
+  square:    { s:15, h:15 },
+  rect:      { l:15, w:15, h:15 },
+  rectangle: { l:15, w:15, h:15 },
+  sphere:    { d:10 },
+  wedge:     { l:15, w:15, h:15 },
+  bag:       { l:30, w:30, h:30 }
+};
+let shapeMinOverrides = {};
+
+function getShapeMin(shape, key){
+  return shapeMinOverrides[shape]?.[key] ?? SHAPE_MIN_DEFAULTS[shape]?.[key] ?? 1;
+}
+
+function passesAspectGuard(dimsObj){
+  const vals = Object.values(dimsObj).filter(v => v > 0);
+  if(vals.length < 2) return true;
+  const mx = Math.max(...vals), mn = Math.min(...vals);
+  return (mx / mn) <= 10;
+}
+
+function iterRange(shape, key, c, lockedDims){
+  if(lockedDims && lockedDims[key] && lockedDims[key] > 0) return [lockedDims[key]];
+  const min = getShapeMin(shape, key);
+  let maxCap;
+  switch(key){
+    case 'l': maxCap = c.l; break;
+    case 'w': maxCap = c.w; break;
+    case 'h': maxCap = c.h; break;
+    case 's': maxCap = Math.min(c.l, c.w); break;
+    case 'd': maxCap = (shape === 'sphere') ? Math.min(c.l, c.w, c.h) : Math.min(c.l, c.w); break;
+    default:  maxCap = c.h;
+  }
+  const step = (['l','w','h'].includes(key) && ['rect','rectangle','wedge','bag'].includes(shape)) ? 5 : 1;
+  const out = [];
+  for(let v = min; v <= maxCap; v += step) out.push(v);
+  return out;
+}
+
+function runSuggestSize(c, shape, lockedDims, target){
+  if(shape === undefined) shape = (packs[0] && packs[0].shape) || pkgType;
+  if(lockedDims === undefined) lockedDims = {};
+  if(target === undefined){
+    target = parseInt(document.getElementById('sug_target')?.value) || 0;
+  }
   const gap=getGapCm();
   const results=[];
   const seen=new Set();
@@ -2098,39 +2142,54 @@ function runSuggestSize(c){
     if(!seen.has(key)){seen.add(key);results.push(mkRow(perL,perW,perH,count));}
   }
 
-  if(pkgType==='cylinder'){
-    const maxD=Math.floor(Math.min(c.l,c.w)),maxH=Math.floor(c.h);
-    for(let d=1;d<=maxD;d++)for(let h=1;h<=maxH;h++){
-      const vol=Math.PI*(d/2)*(d/2)*h;
-      tryDims(d,d,h,(pL,pW,pH,cnt)=>({d,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+  if(shape==='cylinder'){
+    for(const d of iterRange(shape,'d',c,lockedDims)){
+      for(const h of iterRange(shape,'h',c,lockedDims)){
+        if(!passesAspectGuard({d,h})) continue;
+        const vol=Math.PI*(d/2)*(d/2)*h;
+        tryDims(d,d,h,(pL,pW,pH,cnt)=>({d,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+      }
     }
-  } else if(pkgType==='square'){
-    const maxS=Math.floor(Math.min(c.l,c.w)),maxH=Math.floor(c.h);
-    for(let s=1;s<=maxS;s++)for(let h=1;h<=maxH;h++){
-      const vol=s*s*h;
-      tryDims(s,s,h,(pL,pW,pH,cnt)=>({s,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+  } else if(shape==='square'){
+    for(const s of iterRange(shape,'s',c,lockedDims)){
+      for(const h of iterRange(shape,'h',c,lockedDims)){
+        if(!passesAspectGuard({s,h})) continue;
+        const vol=s*s*h;
+        tryDims(s,s,h,(pL,pW,pH,cnt)=>({s,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+      }
     }
-  } else if(pkgType==='rect'){
-    const step=5;
-    for(let l=step;l<=c.l;l+=step)for(let w=step;w<=c.w;w+=step)for(let h=step;h<=c.h;h+=step){
-      const vol=l*w*h;
-      tryDims(l,w,h,(pL,pW,pH,cnt)=>({l,w,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+  } else if(shape==='rect' || shape==='rectangle'){
+    for(const l of iterRange(shape,'l',c,lockedDims)){
+      for(const w of iterRange(shape,'w',c,lockedDims)){
+        for(const h of iterRange(shape,'h',c,lockedDims)){
+          if(!passesAspectGuard({l,w,h})) continue;
+          const vol=l*w*h;
+          tryDims(l,w,h,(pL,pW,pH,cnt)=>({l,w,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+        }
+      }
     }
-  } else if(pkgType==='wedge'){
-    const step=5;
-    for(let l=step;l<=c.l;l+=step)for(let w=step;w<=c.w;w+=step)for(let h=step;h<=c.h;h+=step){
-      const vol=0.5*l*w*h;
-      tryDims(l,w,h,(pL,pW,pH,cnt)=>({l,w,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+  } else if(shape==='wedge'){
+    for(const l of iterRange(shape,'l',c,lockedDims)){
+      for(const w of iterRange(shape,'w',c,lockedDims)){
+        for(const h of iterRange(shape,'h',c,lockedDims)){
+          if(!passesAspectGuard({l,w,h})) continue;
+          const vol=0.5*l*w*h;
+          tryDims(l,w,h,(pL,pW,pH,cnt)=>({l,w,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+        }
+      }
     }
-  } else if(pkgType==='bag'){
-    const step=5;
-    for(let l=step;l<=c.l;l+=step)for(let w=step;w<=c.w;w+=step)for(let h=step;h<=c.h;h+=step){
-      const vol=0.75*l*w*h;
-      tryDims(l,w,h,(pL,pW,pH,cnt)=>({l,w,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+  } else if(shape==='bag'){
+    for(const l of iterRange(shape,'l',c,lockedDims)){
+      for(const w of iterRange(shape,'w',c,lockedDims)){
+        for(const h of iterRange(shape,'h',c,lockedDims)){
+          if(!passesAspectGuard({l,w,h})) continue;
+          const vol=l*w*h;
+          tryDims(l,w,h,(pL,pW,pH,cnt)=>({l,w,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
+        }
+      }
     }
   } else { // sphere
-    const maxD=Math.floor(Math.min(c.l,c.w,c.h));
-    for(let d=1;d<=maxD;d++){
+    for(const d of iterRange(shape,'d',c,lockedDims)){
       const vol=(4/3)*Math.PI*(d/2)*(d/2)*(d/2);
       tryDims(d,d,d,(pL,pW,pH,cnt)=>({d,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
     }
@@ -2141,18 +2200,21 @@ function runSuggestSize(c){
   } else {
     results.sort((a,b)=>b.util-a.util);
   }
-  renderSuggest(results.slice(0,15),target,c);
+  const top = results.slice(0,15);
+  renderSuggest(top, target, c, shape);
+  return top;
 }
 
-function renderSuggest(rows,target,c){
+function renderSuggest(rows,target,c,shape){
+  if(shape === undefined) shape = pkgType;
   const el=document.getElementById('rbar');
   if(!rows.length){el.innerHTML='<div class="err">⚠ No valid packages found.</div>';return;}
   const contLabel=document.getElementById('containerSelect').options[document.getElementById('containerSelect').selectedIndex].text.split('—')[0].trim();
-  let h=`<div style="margin-bottom:5px;font-size:0.75rem;color:#8b949e">💡 <b style="color:#c9d1d9">Top ${rows.length} package sizes</b> — ${pkgType} · ${contLabel}`+(target>0?` · target: <b>${target}</b>`:' · sorted by vol%')+` &nbsp;<span style="font-size:0.67rem">(click Apply to preview in 3D)</span></div>`;
+  let h=`<div style="margin-bottom:5px;font-size:0.75rem;color:#8b949e">💡 <b style="color:#c9d1d9">Top ${rows.length} package sizes</b> — ${shape} · ${contLabel}`+(target>0?` · target: <b>${target}</b>`:' · sorted by vol%')+` &nbsp;<span style="font-size:0.67rem">(click Apply to preview in 3D)</span></div>`;
   h+=`<div style="overflow-x:auto"><table class="sug-table"><thead><tr>`;
-  if(pkgType==='cylinder')h+=`<th>⌀ cm</th><th>H cm</th>`;
-  else if(pkgType==='square')h+=`<th>Side cm</th><th>H cm</th>`;
-  else if(pkgType==='rect'||pkgType==='wedge'||pkgType==='bag')h+=`<th>L cm</th><th>W cm</th><th>H cm</th>`;
+  if(shape==='cylinder')h+=`<th>⌀ cm</th><th>H cm</th>`;
+  else if(shape==='square')h+=`<th>Side cm</th><th>H cm</th>`;
+  else if(shape==='rect'||shape==='rectangle'||shape==='wedge'||shape==='bag')h+=`<th>L cm</th><th>W cm</th><th>H cm</th>`;
   else h+=`<th>⌀ cm</th>`;
   h+=`<th>Count</th><th>Grid</th><th>Vol%</th>`;
   if(target>0)h+=`<th>Δ</th>`;
@@ -2162,10 +2224,10 @@ function renderSuggest(rows,target,c){
     const cls=isExact?'s-exact':i===0?'s-best':'';
     const delta=target>0?(r.count>target?`<span class="match-over">+${r.count-target}</span>`:r.count<target?`<span class="match-under">-${target-r.count}</span>`:`<span class="match-exact">=</span>`):'';
     let dims='',applyArgs='';
-    if(pkgType==='cylinder'){dims=`<td>${r.d}</td><td>${r.h}</td>`;applyArgs=`${r.d},${r.h}`;}
-    else if(pkgType==='square'){dims=`<td>${r.s}</td><td>${r.h}</td>`;applyArgs=`${r.s},${r.h}`;}
-    else if(pkgType==='rect'||pkgType==='wedge'||pkgType==='bag'){dims=`<td>${r.l}</td><td>${r.w}</td><td>${r.h}</td>`;applyArgs=`${r.l},${r.w},${r.h}`;}
-    else{dims=`<td>${r.d}</td>`;applyArgs=`${r.d}`;}
+    if(shape==='cylinder'){dims=`<td>${r.d}</td><td>${r.h}</td>`;applyArgs=`'cylinder',${r.d},${r.h}`;}
+    else if(shape==='square'){dims=`<td>${r.s}</td><td>${r.h}</td>`;applyArgs=`'square',${r.s},${r.h}`;}
+    else if(shape==='rect'||shape==='rectangle'||shape==='wedge'||shape==='bag'){dims=`<td>${r.l}</td><td>${r.w}</td><td>${r.h}</td>`;applyArgs=`'${shape}',${r.l},${r.w},${r.h}`;}
+    else{dims=`<td>${r.d}</td>`;applyArgs=`'sphere',${r.d}`;}
     h+=`<tr class="${cls}">${dims}<td><b>${r.count.toLocaleString()}</b></td><td>${r.perL}×${r.perW}×${r.perH}</td><td>${r.util.toFixed(1)}%</td>`;
     if(target>0)h+=`<td>${delta}</td>`;
     h+=`<td><button class="apply-btn" onclick="applySuggestion(${applyArgs})">Apply</button></td></tr>`;
@@ -2174,12 +2236,20 @@ function renderSuggest(rows,target,c){
   el.innerHTML=h;
 }
 
-function applySuggestion(...dims){
-  if(pkgType==='cylinder'){document.getElementById('p_d').value=dims[0];document.getElementById('p_ch').value=dims[1];}
-  else if(pkgType==='square'){document.getElementById('p_s').value=dims[0];document.getElementById('p_sh').value=dims[1];}
-  else if(pkgType==='rect'){document.getElementById('p_l').value=dims[0];document.getElementById('p_w').value=dims[1];document.getElementById('p_rh').value=dims[2];}
-  else if(pkgType==='wedge'){document.getElementById('p_wdl').value=dims[0];document.getElementById('p_wdw').value=dims[1];document.getElementById('p_wdh').value=dims[2];}
-  else if(pkgType==='bag'){document.getElementById('p_bgl').value=dims[0];document.getElementById('p_bgw').value=dims[1];document.getElementById('p_bgh').value=dims[2];}
+function applySuggestion(...args){
+  // New signature: (shape, ...dims). Back-compat: if first arg is a number, use pkgType.
+  let shape, dims;
+  if(typeof args[0] === 'string'){
+    shape = args[0]; dims = args.slice(1);
+  } else {
+    shape = pkgType; dims = args;
+  }
+  if(shape !== pkgType) setType(shape);
+  if(shape==='cylinder'){document.getElementById('p_d').value=dims[0];document.getElementById('p_ch').value=dims[1];}
+  else if(shape==='square'){document.getElementById('p_s').value=dims[0];document.getElementById('p_sh').value=dims[1];}
+  else if(shape==='rect'||shape==='rectangle'){document.getElementById('p_l').value=dims[0];document.getElementById('p_w').value=dims[1];document.getElementById('p_rh').value=dims[2];}
+  else if(shape==='wedge'){document.getElementById('p_wdl').value=dims[0];document.getElementById('p_wdw').value=dims[1];document.getElementById('p_wdh').value=dims[2];}
+  else if(shape==='bag'){document.getElementById('p_bgl').value=dims[0];document.getElementById('p_bgw').value=dims[1];document.getElementById('p_bgh').value=dims[2];}
   else{document.getElementById('p_sd').value=dims[0];}
   setMode('auto');
   calculate();
