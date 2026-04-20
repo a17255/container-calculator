@@ -1693,28 +1693,45 @@ function renderResult(r){
   const rb=document.getElementById('rbar');
   if(!rb) return;
   if(r && r.zoneResults){
-    const { mode, container, zoneResults, totalCount, totalVol, totalWeight } = r;
+    const { mode, container, zoneResults } = r;
+    // Custom mode: clamp per-pack displayed count (and totals) to zr.inputCount
+    let dispTotalCount=0, dispTotalVol=0, dispTotalWeight=0;
+    const dispPerPack=[];
+    for(const zr of zoneResults){
+      const rawCount = zr.grid.count;
+      const cap = (zr.inputCount!==undefined) ? Math.min(zr.inputCount, rawCount) : rawCount;
+      const vol = cap * (zr.pkgObj.vol||0);
+      const wt  = cap * (zr.pkgObj.weight||0);
+      dispPerPack.push({ zr, cap });
+      dispTotalCount += cap;
+      dispTotalVol   += vol;
+      dispTotalWeight+= wt;
+    }
     const containerVol = container.l*container.w*container.h;
-    const utilPct = containerVol>0 ? (totalVol/containerVol*100) : 0;
+    const utilPct = containerVol>0 ? (dispTotalVol/containerVol*100) : 0;
     const payloadKg = container.payload || 0;
-    const weightOK = payloadKg<=0 || totalWeight<=payloadKg;
+    const weightOK = payloadKg<=0 || dispTotalWeight<=payloadKg;
+    const utilBarColor = utilPct>=90?'#3fb950':utilPct>=60?'#f0883e':'#58a6ff';
     const lines=[];
     const axisLabel = r.chosenAxis ? r.chosenAxis : splitAxis;
     lines.push(`Mode: ${modeLabel(mode)}  |  Split: ${axisLabel}${r.autoReport || ''}`);
-    for(const zr of zoneResults){
-      const p=zr.pack, g=zr.grid, z=zr.zone;
+    for(const dp of dispPerPack){
+      const p=dp.zr.pack, g=dp.zr.grid, z=dp.zr.zone;
+      const capNote = (dp.zr.inputCount!==undefined && dp.cap<g.count)
+        ? ` <span style="color:#8b949e">(capped from ${fmtN(g.count)})</span>` : '';
       lines.push(
         `<span style="display:inline-block;width:10px;height:10px;background:${p.color};margin-right:6px;vertical-align:middle;border-radius:2px"></span>`
-        +`Pack ${p.id} (${p.shape}): <b>${fmtN(g.count)}</b> units · `
+        +`Pack ${p.id} (${p.shape}): <b>${fmtN(dp.cap)}</b> units${capNote} · `
         +`Grid ${g.perL}×${g.perW}×${g.perH} · `
         +`Zone ${Math.round(z.l)}×${Math.round(z.w)}×${Math.round(z.h)} cm`
       );
     }
-    const wtStr = totalWeight>0
-      ? `${fmtN(totalWeight)} kg ${weightOK?'✓':'⚠ over payload'}`
+    const wtStr = dispTotalWeight>0
+      ? `${fmtN(dispTotalWeight)} kg ${weightOK?'<span style="color:#3fb950">✓</span>':'<span style="color:#f85149">⚠ over payload</span>'}`
       : '—';
+    const bar = `<span style="display:inline-block;width:90px;height:8px;background:#21262d;border-radius:4px;vertical-align:middle;margin:0 4px;overflow:hidden"><span style="display:block;height:100%;width:${Math.min(utilPct,100).toFixed(1)}%;background:${utilBarColor}"></span></span>`;
     lines.push(
-      `<b>Total: ${fmtN(totalCount)} packages</b>  ·  Vol util: <b>${utilPct.toFixed(1)}%</b>  ·  Weight: ${wtStr}`
+      `<b>Total: ${fmtN(dispTotalCount)} packages</b>  ·  Vol util: <b>${utilPct.toFixed(1)}%</b>${bar}·  Weight: ${wtStr}`
     );
     rb.innerHTML=lines.map(l=>`<div class="info-line">${l}</div>`).join('');
     return;
