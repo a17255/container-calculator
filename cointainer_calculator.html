@@ -314,7 +314,7 @@ input[type=range]{width:65px;accent-color:#58a6ff}
   </div>
   <div class="hdr-right">
     <button class="print-btn" onclick="window.print()">🖨 Print</button>
-    <div id="licBadge" class="lic-badge lic-ok" onclick="showKeyDialog()">✓ Licensed</div>
+    <div id="licBadge" class="lic-badge lic-ok" onclick="showUserPanel()">✓ Licensed</div>
   </div>
 </div>
 
@@ -709,11 +709,64 @@ function unlockApp(expiry, email) {
   init();
 }
 
-function showKeyDialog() {
-  // Show a simple dialog to enter new key
-  const cur=document.getElementById('keyInput').value;
+// ── User panel (badge click) ──
+// Clicking #licBadge opens a small popup with license info + Logout.
+// Passcode/admin is NOT exposed here — admin is only via 5-clicks-in-3s
+// on #hdrIcon / #lockIconClick.
+let _userPanelEl=null;
+function doLogout(){
+  try{localStorage.removeItem(LS_LIC);}catch(e){}
+  if(_userPanelEl){_userPanelEl.remove();_userPanelEl=null;}
   document.getElementById('lockScreen').style.display='flex';
   document.getElementById('app').classList.remove('unlocked');
+  const k=document.getElementById('keyInput');if(k)k.value='';
+  const m=document.getElementById('lockMsg');if(m)m.textContent='';
+}
+function showUserPanel(){
+  if(_userPanelEl){_userPanelEl.remove();_userPanelEl=null;return;}
+  let st=null;try{st=JSON.parse(localStorage.getItem(LS_LIC)||'null');}catch(e){}
+  if(!st){doLogout();return;}
+  const email=st.email||'';
+  const key=(st.key||'').toUpperCase();
+  const expiry=st.expiry?new Date(st.expiry).toLocaleDateString('en-GB'):'—';
+  const mask=k=>k.length<=6?k:k.slice(0,4)+'-••••-••••-'+k.slice(-4);
+  _userPanelEl=document.createElement('div');
+  _userPanelEl.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center';
+  _userPanelEl.addEventListener('click',e=>{if(e.target===_userPanelEl){_userPanelEl.remove();_userPanelEl=null;}});
+  const box=document.createElement('div');
+  box.style.cssText='background:#161b22;border:1px solid #30363d;border-radius:12px;padding:22px;width:320px;color:#c9d1d9;font-size:0.85rem;box-shadow:0 10px 40px rgba(0,0,0,.6)';
+  box.innerHTML=`
+    <div style="text-align:center;font-size:1.8rem;margin-bottom:6px">👤</div>
+    <div style="text-align:center;font-size:0.95rem;color:#f0f6fc;margin-bottom:14px;word-break:break-all">${email}</div>
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin-bottom:14px">
+      <div style="color:#8b949e">App:</div><div>Container Calc</div>
+      <div style="color:#8b949e">Expires:</div><div>${expiry}</div>
+      <div style="color:#8b949e">Key:</div><div id="_upKey" style="font-family:ui-monospace,Menlo,monospace;font-size:0.78rem">${mask(key)}</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button id="_upCopy" style="flex:1;padding:7px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;cursor:pointer;font-size:0.8rem">📋 Copy key</button>
+      <button id="_upReveal" style="flex:1;padding:7px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;cursor:pointer;font-size:0.8rem">👁 Show</button>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="_upLogout" style="flex:1;padding:9px;background:linear-gradient(135deg,#da3633,#f85149);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:0.85rem">Log out</button>
+      <button id="_upClose" style="flex:1;padding:9px;background:transparent;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;cursor:pointer;font-size:0.85rem">Close</button>
+    </div>
+    <div id="_upMsg" style="min-height:16px;margin-top:8px;font-size:0.72rem;color:#3fb950;text-align:center"></div>`;
+  _userPanelEl.appendChild(box);
+  document.body.appendChild(_userPanelEl);
+  let revealed=false;
+  document.getElementById('_upReveal').addEventListener('click',()=>{
+    revealed=!revealed;
+    document.getElementById('_upKey').textContent=revealed?key:mask(key);
+    document.getElementById('_upReveal').textContent=revealed?'🙈 Hide':'👁 Show';
+  });
+  document.getElementById('_upCopy').addEventListener('click',async()=>{
+    const msg=document.getElementById('_upMsg');
+    try{await navigator.clipboard.writeText(key);msg.textContent='Key copied to clipboard';}
+    catch(e){msg.textContent='Copy failed — select and copy manually';msg.style.color='#f85149';}
+  });
+  document.getElementById('_upClose').addEventListener('click',()=>{_userPanelEl.remove();_userPanelEl=null;});
+  document.getElementById('_upLogout').addEventListener('click',doLogout);
 }
 
 // ── Admin passcode ──
@@ -976,6 +1029,43 @@ let pkg2Type='cylinder', pkg2Enabled=false;
 let viewAz=Math.PI/4, viewEl=Math.PI/6, lastViz=null;
 let cmpVisible=true;
 
+// New array-based pack state (parallel to legacy pkg/pkg2 until Task 10)
+let packs = [
+  { id: 1, shape: 'cylinder', dims: {}, gap: 0, weight: 0, allocPct: 100, color: '#3fb950' }
+];
+let splitAxis = 'L'; // 'L' | 'W' | 'H' | 'auto'
+const PACK_COLORS = ['#3fb950', '#4ecca3', '#f0883e'];
+
+function readDimsForShape(shape, suffix){
+  const g = (id) => +(document.getElementById('p'+suffix+'_'+id)?.value || 0);
+  switch(shape){
+    case 'cylinder': return { d:g('d'), h:g('ch') };
+    case 'square':   return { s:g('s'), h:g('sh') };
+    case 'rectangle':return { l:g('l'), w:g('w'), h:g('rh') };
+    case 'rect':     return { l:g('l'), w:g('w'), h:g('rh') };
+    case 'sphere':   return { d:g('sd') };
+    case 'wedge':    return { l:g('l'), w:g('w'), h:g('rh') };
+    case 'bag':      return { l:g('l'), w:g('w'), h:g('rh') };
+  }
+  return {};
+}
+
+function syncPacksFromDOM(){
+  const shape1 = (document.querySelector('.chip[data-type].active')?.dataset.type) || pkgType || 'cylinder';
+  const gap1 = +(document.getElementById('p_gap')?.value || 0);
+  const w1 = +(document.getElementById('p_weight')?.value || 0);
+  const d1 = readDimsForShape(shape1, '');
+  packs = [{ id:1, shape:shape1, dims:d1, gap:gap1, weight:w1, allocPct:100, color:PACK_COLORS[0] }];
+  if(pkg2Enabled){
+    const shape2 = pkg2Type || 'cylinder';
+    const gap2 = +(document.getElementById('p2_gap')?.value || 0);
+    const w2 = +(document.getElementById('p2_weight')?.value || 0);
+    const d2 = readDimsForShape(shape2, '2');
+    packs[0].allocPct = 50;
+    packs.push({ id:2, shape:shape2, dims:d2, gap:gap2, weight:w2, allocPct:50, color:PACK_COLORS[1] });
+  }
+}
+
 const LS_KEY='cpc_v2';
 function saveState() {
   try{localStorage.setItem(LS_KEY,JSON.stringify({
@@ -1163,6 +1253,7 @@ function showErr(m){const e=document.getElementById('calc_err');e.textContent='�
 function clearErr(){document.getElementById('calc_err').style.display='none';}
 
 function calculate() {
+  syncPacksFromDOM();
   clearErr();
   const c=getContainerDims();
   if(outputMode==='suggest'){saveState();runSuggestSize(c);return;}
