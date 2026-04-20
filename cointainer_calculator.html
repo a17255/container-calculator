@@ -1593,7 +1593,33 @@ function calculate() {
   syncPacksFromDOM();
   clearErr();
   const c=getContainerDims();
-  if(outputMode==='suggest'){saveState();runSuggestSize(c);return;}
+  if(outputMode==='suggest'){
+    saveState();
+    // Hide comparison + clear 3D so suggest view is clean.
+    const cw = document.getElementById('cmpWrap'); if(cw) cw.style.display='none';
+    lastViz = null;
+    try { drawEmpty3D(); } catch(e){}
+    // Pick shape: if partial-mode is active and has a shape, honor it; else
+    // use primary/Pack-1 shape (packs[0].shape or pkgType).
+    let shape, locked = {};
+    const sgMode = document.querySelector('input[name=sgMode]:checked')?.value || 'all';
+    if(sgMode === 'partial'){
+      shape = document.getElementById('sgShape')?.value || (packs[0] && packs[0].shape) || pkgType;
+      document.querySelectorAll('#sgPartialDims .sg-lock').forEach(btn => {
+        if(btn.dataset.locked === '1'){
+          const key = btn.dataset.key;
+          const val = +document.querySelector(`#sgPartialDims .sg-dim[data-key="${key}"]`)?.value;
+          if(val > 0) locked[key] = val;
+        }
+      });
+    } else {
+      shape = (packs[0] && packs[0].shape) || pkgType;
+    }
+    const target = +(document.getElementById('sug_target')?.value) || 0;
+    runSuggestSize(c, shape, locked, target);
+    if(typeof isDemo !== 'undefined' && isDemo) demoBump();
+    return;
+  }
 
   // Allocation sum validation
   const allocSum=packs.reduce((a,p)=>a+(p.allocPct||0),0);
