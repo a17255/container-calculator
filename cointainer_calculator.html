@@ -1211,9 +1211,37 @@ function rebalanceAlloc(){
   packs[0].allocPct += (100 - sum);
 }
 
-// Stub: suggestForPack lands in Task 13
 function suggestForPack(idx){
-  alert('Suggest-for-pack will be available in the next iteration.');
+  if(idx < 0 || idx >= packs.length) return;
+
+  // Validate OTHER packs have filled dims
+  for(let i=0; i<packs.length; i++){
+    if(i === idx) continue;
+    const d = packs[i].dims || {};
+    const required = {
+      cylinder:['d','h'], square:['s','h'],
+      rect:['l','w','h'], rectangle:['l','w','h'],
+      sphere:['d'], wedge:['l','w','h'], bag:['l','w','h']
+    }[packs[i].shape] || [];
+    for(const k of required){
+      if(!(d[k] > 0)){
+        alert(`Fill dimensions for Pack ${packs[i].id} (${packs[i].shape}) first.`);
+        return;
+      }
+    }
+  }
+
+  const c = getContainerDims();
+  const axis = splitAxis === 'auto' ? 'L' : splitAxis;
+  const zones = computePackZones(c, axis, packs);
+  const z = zones[idx];
+  if(!z || z.l <= 0 || z.w <= 0 || z.h <= 0){
+    alert("No space remaining — increase this pack's allocation.");
+    return;
+  }
+  const shape = packs[idx].shape;
+  const reducedContainer = { l: z.l, w: z.w, h: z.h };
+  runSuggestSize(reducedContainer, shape, {}, 0);
 }
 
 const LS_KEY='cpc_v2';
