@@ -1323,6 +1323,11 @@ function setOrientation(o){orientation=o;['z','x','y'].forEach(x=>document.getEl
 function setMode(m){
   if(isDemo&&m==='suggest'){alert('💡 Suggest Size is a full-version feature.\nContact hovanphapbk@gmail.com for a license.');return;}
   outputMode=m;['auto','custom','suggest'].forEach(x=>document.getElementById('mode_'+x).classList.toggle('ao',x===m));document.getElementById('custom_wrap').style.display=m==='custom'?'block':'none';document.getElementById('suggest_wrap').style.display=m==='suggest'?'block':'none';
+  if(m !== 'auto' && splitAxis === 'auto'){
+    splitAxis = 'L';
+    const r = document.querySelector('input[name=splitAxis][value=L]');
+    if(r) r.checked = true;
+  }
   renderPacksPanel();
 }
 
@@ -1404,6 +1409,27 @@ function computePackZones(c, axis, packsArr){
   return zones;
 }
 
+function tryAllAxes(c, packsArr){
+  const axes = ['L','W','H'];
+  const results = {};
+  let best = null;
+  for(const ax of axes){
+    const zz = computePackZones(c, ax, packsArr);
+    let total = 0;
+    const perPack = [];
+    for(let i=0; i<packsArr.length; i++){
+      const p = getPackDims(i);
+      if(!p || !p.footL || !p.stackH){ perPack.push({perL:0,perW:0,perH:0,count:0}); continue; }
+      const g = calcGrid(zz[i], p);
+      perPack.push(g);
+      total += g.count;
+    }
+    results[ax] = { total, zones: zz, perPack };
+    if(!best || total > results[best.axis].total) best = { axis: ax };
+  }
+  return { best: best.axis, results };
+}
+
 function getPkgVolume() {
   if(pkgType==='cylinder'){const d=parseFloat(document.getElementById('p_d').value)||0,h=parseFloat(document.getElementById('p_ch').value)||0;return Math.PI*(d/2)*(d/2)*h;}
   if(pkgType==='square'){const s=parseFloat(document.getElementById('p_s').value)||0,h=parseFloat(document.getElementById('p_sh').value)||0;return s*s*h;}
@@ -1448,8 +1474,15 @@ function calculate() {
 
   // Build pkg objects per pack. For pack 0, use getPkgDims() so orientation
   // from DOM is preserved (single-pack behavior must match legacy).
-  const axisForCalc=(splitAxis==='auto')?'L':splitAxis;
-  const zones=computePackZones(c,axisForCalc,packs);
+  let chosenAxis = splitAxis;
+  let autoReport = '';
+  if(splitAxis === 'auto' && outputMode === 'auto'){
+    const solved = tryAllAxes(c, packs);
+    chosenAxis = solved.best;
+    autoReport = ` (auto — tried L=${solved.results.L.total}, W=${solved.results.W.total}, H=${solved.results.H.total})`;
+  }
+  const axisForCalc = (chosenAxis === 'auto') ? 'L' : chosenAxis;
+  const zones = computePackZones(c, axisForCalc, packs);
   const zoneResults=[];
   let totalCount=0, totalVol=0, totalWeight=0;
   const pkgObjs=[];
@@ -1508,7 +1541,7 @@ function calculate() {
     zoneResults[0].inputCount=inputCount;
   }
 
-  renderResult({ mode:modeOut, container:c, zoneResults, totalCount, totalVol, totalWeight });
+  renderResult({ mode:modeOut, container:c, zoneResults, totalCount, totalVol, totalWeight, chosenAxis, autoReport });
   lastViz=[c, zoneResults];
   draw3D(...lastViz);
   if(isMobile())switchMobileTab('3d');
@@ -1536,7 +1569,8 @@ function renderResult(r){
     const payloadKg = container.payload || 0;
     const weightOK = payloadKg<=0 || totalWeight<=payloadKg;
     const lines=[];
-    lines.push(`Mode: ${modeLabel(mode)}  |  Split: ${splitAxis==='auto'?'auto':splitAxis}`);
+    const axisLabel = r.chosenAxis ? r.chosenAxis : splitAxis;
+    lines.push(`Mode: ${modeLabel(mode)}  |  Split: ${axisLabel}${r.autoReport || ''}`);
     for(const zr of zoneResults){
       const p=zr.pack, g=zr.grid, z=zr.zone;
       lines.push(
