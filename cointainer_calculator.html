@@ -187,14 +187,6 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 .wt-ok{background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.25);color:#3fb950}
 .wt-over{background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.25);color:#f85149}
 
-/* ── Secondary package toggle ── */
-.pkg2-hdr{display:flex;align-items:center;cursor:pointer;user-select:none;gap:8px}
-.pkg2-hdr:hover .sec{color:#79c0ff}
-.pkg2-badge{margin-left:auto;font-size:0.66rem;font-weight:600;padding:2px 8px;border-radius:10px;transition:all .15s}
-.pkg2-on{background:rgba(78,204,163,.15);color:#4ecca3;border:1px solid rgba(78,204,163,.4)}
-.pkg2-off{background:#0d1117;color:#484f58;border:1px solid #30363d}
-.zone2-color{color:#4ecca3}
-
 /* ── Packs panel (multi-pack UI) ── */
 .packs-panel { border:1px solid #30363d; border-radius:6px; padding:12px; margin-top:12px; background:#0d1117; }
 .packs-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-weight:600; color:#c9d1d9; }
@@ -950,8 +942,7 @@ function applyDemoRestrictions(){
   // Disable Suggest Size button
   const sb=document.getElementById('mode_suggest');
   sb.disabled=true;sb.style.opacity='0.35';sb.title='Full version only';
-  // Hide mixed load, comparison, print
-  document.getElementById('pkg2Card').style.display='none';
+  // Hide comparison, print
   document.getElementById('cmpWrap').style.display='none';
   document.querySelector('.print-btn').style.display='none';
   // Add demo notice banner under header
@@ -1017,11 +1008,10 @@ const PRESETS = {
 // STATE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 let pkgType='cylinder', orientation='z', outputMode='auto';
-let pkg2Type='cylinder', pkg2Enabled=false;
 let viewAz=Math.PI/4, viewEl=Math.PI/6, lastViz=null;
 let cmpVisible=true;
 
-// New array-based pack state (parallel to legacy pkg/pkg2 until Task 10)
+// Array-based pack state
 let packs = [
   { id: 1, shape: 'cylinder', dims: {}, gap: 0, weight: 0, allocPct: 100, color: '#3fb950' }
 ];
@@ -1210,7 +1200,6 @@ function saveState() {
     p_weight:document.getElementById('p_weight').value,
     pkg_count:document.getElementById('pkg_count').value,
     viewAz,viewEl,
-    pkg2Enabled,pkg2Type,
   }));}catch(e){}
 }
 function loadState() {
@@ -1223,16 +1212,11 @@ function loadState() {
     s('p_wdl',st.p_wdl);s('p_wdw',st.p_wdw);s('p_wdh',st.p_wdh);
     s('p_bgl',st.p_bgl);s('p_bgw',st.p_bgw);s('p_bgh',st.p_bgh);
     s('p_gap',st.p_gap);s('p_weight',st.p_weight);s('pkg_count',st.pkg_count);
-    s('p2_d',st.p2_d);s('p2_ch',st.p2_ch);s('p2_s',st.p2_s);s('p2_sh',st.p2_sh);
-    s('p2_l',st.p2_l);s('p2_w',st.p2_w);s('p2_rh',st.p2_rh);s('p2_sd',st.p2_sd);
-    s('p2_gap',st.p2_gap);s('p2_weight',st.p2_weight);
     if(st.viewAz!==undefined)viewAz=st.viewAz;
     if(st.viewEl!==undefined){viewEl=st.viewEl;document.getElementById('elevSlider').value=Math.round(st.viewEl*180/Math.PI);}
     if(st.pkgType)setType(st.pkgType);
     if(st.orientation){const migr={'vertical':'z','horizontal':'x'};setOrientation(migr[st.orientation]||st.orientation);}
     if(st.outputMode)setMode(st.outputMode);
-    if(st.pkg2Type)setType2(st.pkg2Type);
-    if(st.pkg2Enabled&&!pkg2Enabled)togglePkg2();
   }catch(e){}
 }
 
@@ -1618,8 +1602,7 @@ function renderResult(r){
       Edge leftover: <b>${fmtM3(r.edgeRemVol)} m³</b>`+
       (pkgType==='cylinder'||pkgType==='sphere'?` &nbsp;|&nbsp; Internal gaps: <b>${fmtM3(r.internalGapVol)} m³</b>`:'')
     +`</div>`
-    +weightHtml()
-    +(r.zone2?(()=>{const z=r.zone2,pw2=parseFloat(document.getElementById('p2_weight').value)||0,wt2=pw2>0?pw2*z.count:null;return`<div class="info-line" style="margin-top:4px;border-top:1px solid #21262d;padding-top:4px"><span class="zone2-color">⬡ Zone 2 (secondary):</span> <b>${fmtN(z.count)}</b> packages · Grid <b>${z.perL}×${z.perW}×${z.perH}</b> · Z-off <b>${(z.zOffset/100).toFixed(2)} m</b>`+(wt2?` · Wt <b>${fmtN(wt2)} kg</b>`:'')+` &nbsp;→&nbsp; <span style="color:#f0f6fc;font-weight:700">Total: ${fmtN(r.maxCount+z.count)} packages</span></div>`})():'');
+    +weightHtml();
   } else {
     const bc=r.status==='overload'?'#f85149':r.status==='full'?'#3fb950':'#f0883e';
     const bdg=r.status==='full'?'bg-green':r.status==='overload'?'bg-red':'bg-orange';
@@ -1634,8 +1617,7 @@ function renderResult(r){
       <div class="sb"><div class="v" style="color:#f0883e">${fmtM3(r.totalEmptyVol)} m³</div><div class="l">Total unused</div></div>
     </div>
     <div class="info-line">Edge strips — L: <b>${r.remL.toFixed(1)} cm</b>, W: <b>${r.remW.toFixed(1)} cm</b>, H: <b>${r.remH.toFixed(1)} cm</b> &nbsp;|&nbsp; Edge leftover: <b>${fmtM3(r.edgeRemVol)} m³</b></div>`
-    +weightHtml()
-    +(r.zone2?(()=>{const z=r.zone2,pw2=parseFloat(document.getElementById('p2_weight').value)||0,wt2=pw2>0?pw2*z.count:null;return`<div class="info-line" style="margin-top:4px;border-top:1px solid #21262d;padding-top:4px"><span class="zone2-color">⬡ Zone 2 (secondary):</span> <b>${fmtN(z.count)}</b> packages · Grid <b>${z.perL}×${z.perW}×${z.perH}</b>`+(wt2?` · Wt <b>${fmtN(wt2)} kg</b>`:'')+`</div>`})():'');
+    +weightHtml();
   }
   el.innerHTML=h;
 }
@@ -2094,26 +2076,6 @@ function refreshCustomPresetsDropdown(){
   og.style.display=arr.length?'':'none';
   og.innerHTML=arr.map(p=>`<option value="custom_${p.id}">${p.name} (${p.dims.type})</option>`).join('');
   chips.innerHTML=arr.map(p=>`<span class="chip" onclick="applyCustomPreset(${p.id})" title="${p.dims.type}">${p.name} <span onclick="event.stopPropagation();deleteCustomPreset(${p.id})" style="color:#f85149;margin-left:3px;cursor:pointer" title="Delete">×</span></span>`).join('');
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECONDARY PACKAGE (MIXED LOAD)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function togglePkg2(){
-  // Legacy no-op: secondary-package UI replaced by Packs panel. Task 10 removes fully.
-}
-function setType2(type){
-  // Legacy no-op: secondary-package UI replaced by Packs panel. Task 10 removes fully.
-  pkg2Type=type;
-}
-function getPkgDims2(){
-  const g=(parseFloat(document.getElementById('p2_gap').value)||0)/10;
-  let raw;
-  if(pkg2Type==='cylinder'){const d=parseFloat(document.getElementById('p2_d').value)||0,h=parseFloat(document.getElementById('p2_ch').value)||0;raw={footL:d,footW:d,stackH:h};}
-  else if(pkg2Type==='square'){const s=parseFloat(document.getElementById('p2_s').value)||0,h=parseFloat(document.getElementById('p2_sh').value)||0;raw={footL:s,footW:s,stackH:h};}
-  else if(pkg2Type==='rect'){const l=parseFloat(document.getElementById('p2_l').value)||0,w=parseFloat(document.getElementById('p2_w').value)||0,h=parseFloat(document.getElementById('p2_rh').value)||0;raw={footL:l,footW:w,stackH:h};}
-  else{const d=parseFloat(document.getElementById('p2_sd').value)||0;raw={footL:d,footW:d,stackH:d};}
-  return{...raw,gap:g,effL:raw.footL+g,effW:raw.footW+g,effH:raw.stackH+g};
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
