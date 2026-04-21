@@ -2401,7 +2401,7 @@ function runSuggestSize(c, shape, lockedDims, target){
   }
   const gap=getGapCm();
   const results=[];
-  const seen=new Set();
+  const seen=new Map();
 
   function tryDims(footL,footW,stackH,mkRow){
     const g=gap;
@@ -2410,8 +2410,15 @@ function runSuggestSize(c, shape, lockedDims, target){
     const perH=Math.floor((c.h+g)/(stackH+g));
     const count=perL*perW*perH;
     if(count===0)return;
+    const row=mkRow(perL,perW,perH,count);
     const key=`${perL}-${perW}-${perH}`;
-    if(!seen.has(key)){seen.add(key);results.push(mkRow(perL,perW,perH,count));}
+    const prev=seen.get(key);
+    if(!prev){ seen.set(key,row); results.push(row); }
+    else if(row.util > prev.util){
+      const idx=results.indexOf(prev);
+      if(idx>=0) results[idx]=row;
+      seen.set(key,row);
+    }
   }
 
   if(shape==='cylinder'){
