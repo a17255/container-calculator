@@ -519,6 +519,7 @@ input[type=range]{width:65px;accent-color:#58a6ff}
         </div>
         <div id="sgAllBlock">
           <label>Target count (optional): <input type="number" id="sug_target" min="0" placeholder="blank = best vol%"></label>
+          <label title="Limit the dimension sweep to ±N× your current pack dims. Blank = full range.">Sweep ±<input type="number" id="sug_sweepX" min="1" step="0.5" value="4" style="width:50px">× my dims</label>
         </div>
         <div id="sgPartialBlock" style="display:none">
           <label>Shape: <select id="sgShape">
@@ -2375,9 +2376,9 @@ function passesAspectGuard(dimsObj){
   return (mx / mn) <= 10;
 }
 
-function iterRange(shape, key, c, lockedDims){
+function iterRange(shape, key, c, lockedDims, sweepCtx){
   if(lockedDims && lockedDims[key] && lockedDims[key] > 0) return [lockedDims[key]];
-  const min = getShapeMin(shape, key);
+  let min = getShapeMin(shape, key);
   let maxCap;
   switch(key){
     case 'l': maxCap = c.l; break;
@@ -2387,17 +2388,50 @@ function iterRange(shape, key, c, lockedDims){
     case 'd': maxCap = (shape === 'sphere') ? Math.min(c.l, c.w, c.h) : Math.min(c.l, c.w); break;
     default:  maxCap = c.h;
   }
+  // Optional sweep clamp: ±N× user's current dim for that key (Auto-all only)
+  if(sweepCtx && sweepCtx.sweepX > 0 && sweepCtx.userDims && sweepCtx.userDims[key] > 0){
+    const u = sweepCtx.userDims[key], n = sweepCtx.sweepX;
+    min = Math.max(min, Math.ceil(u / n));
+    maxCap = Math.min(maxCap, Math.floor(u * n));
+  }
   const step = (['l','w','h'].includes(key) && ['rect','rectangle','wedge','bag'].includes(shape)) ? 5 : 1;
   const out = [];
   for(let v = min; v <= maxCap; v += step) out.push(v);
   return out;
 }
 
-function runSuggestSize(c, shape, lockedDims, target){
+function userDimsForShape(shape){
+  // Returns user's current dims for the given shape (from packs[0] if it matches),
+  // in the same keys iterRange uses. Empty object if shape doesn't match.
+  const p = packs && packs[0];
+  if(!p || p.shape !== shape) return {};
+  const d = p.dims || {};
+  switch(shape){
+    case 'cylinder': return { d:d.d, h:d.h };
+    case 'square':   return { s:d.s, h:d.h };
+    case 'rect':
+    case 'rectangle':return { l:d.l, w:d.w, h:d.h };
+    case 'sphere':   return { d:d.d };
+    case 'wedge':    return { l:d.l, w:d.w, h:d.h };
+    case 'bag':      return { l:d.l, w:d.w, h:d.h };
+  }
+  return {};
+}
+
+function runSuggestSize(c, shape, lockedDims, target, sweepCtx){
   if(shape === undefined) shape = (packs[0] && packs[0].shape) || pkgType;
   if(lockedDims === undefined) lockedDims = {};
   if(target === undefined){
     target = parseInt(document.getElementById('sug_target')?.value) || 0;
+  }
+  // Auto-all: sweep ±N× around user's current dims (if present on UI)
+  if(sweepCtx === undefined){
+    const sgMode = document.querySelector('input[name=sgMode]:checked')?.value;
+    const sweepX = parseFloat(document.getElementById('sug_sweepX')?.value);
+    if(sgMode === 'all' && sweepX > 0){
+      const userDims = userDimsForShape(shape);
+      if(Object.values(userDims).some(v => v > 0)) sweepCtx = { sweepX, userDims };
+    }
   }
   const gap=getGapCm();
   const results=[];
@@ -2422,25 +2456,25 @@ function runSuggestSize(c, shape, lockedDims, target){
   }
 
   if(shape==='cylinder'){
-    for(const d of iterRange(shape,'d',c,lockedDims)){
-      for(const h of iterRange(shape,'h',c,lockedDims)){
+    for(const d of iterRange(shape,'d',c,lockedDims,sweepCtx)){
+      for(const h of iterRange(shape,'h',c,lockedDims,sweepCtx)){
         if(!passesAspectGuard({d,h})) continue;
         const vol=Math.PI*(d/2)*(d/2)*h;
         tryDims(d,d,h,(pL,pW,pH,cnt)=>({d,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
       }
     }
   } else if(shape==='square'){
-    for(const s of iterRange(shape,'s',c,lockedDims)){
-      for(const h of iterRange(shape,'h',c,lockedDims)){
+    for(const s of iterRange(shape,'s',c,lockedDims,sweepCtx)){
+      for(const h of iterRange(shape,'h',c,lockedDims,sweepCtx)){
         if(!passesAspectGuard({s,h})) continue;
         const vol=s*s*h;
         tryDims(s,s,h,(pL,pW,pH,cnt)=>({s,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
       }
     }
   } else if(shape==='rect' || shape==='rectangle'){
-    for(const l of iterRange(shape,'l',c,lockedDims)){
-      for(const w of iterRange(shape,'w',c,lockedDims)){
-        for(const h of iterRange(shape,'h',c,lockedDims)){
+    for(const l of iterRange(shape,'l',c,lockedDims,sweepCtx)){
+      for(const w of iterRange(shape,'w',c,lockedDims,sweepCtx)){
+        for(const h of iterRange(shape,'h',c,lockedDims,sweepCtx)){
           if(!passesAspectGuard({l,w,h})) continue;
           const vol=l*w*h;
           tryDims(l,w,h,(pL,pW,pH,cnt)=>({l,w,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
@@ -2448,9 +2482,9 @@ function runSuggestSize(c, shape, lockedDims, target){
       }
     }
   } else if(shape==='wedge'){
-    for(const l of iterRange(shape,'l',c,lockedDims)){
-      for(const w of iterRange(shape,'w',c,lockedDims)){
-        for(const h of iterRange(shape,'h',c,lockedDims)){
+    for(const l of iterRange(shape,'l',c,lockedDims,sweepCtx)){
+      for(const w of iterRange(shape,'w',c,lockedDims,sweepCtx)){
+        for(const h of iterRange(shape,'h',c,lockedDims,sweepCtx)){
           if(!passesAspectGuard({l,w,h})) continue;
           const vol=0.5*l*w*h;
           tryDims(l,w,h,(pL,pW,pH,cnt)=>({l,w,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
@@ -2458,9 +2492,9 @@ function runSuggestSize(c, shape, lockedDims, target){
       }
     }
   } else if(shape==='bag'){
-    for(const l of iterRange(shape,'l',c,lockedDims)){
-      for(const w of iterRange(shape,'w',c,lockedDims)){
-        for(const h of iterRange(shape,'h',c,lockedDims)){
+    for(const l of iterRange(shape,'l',c,lockedDims,sweepCtx)){
+      for(const w of iterRange(shape,'w',c,lockedDims,sweepCtx)){
+        for(const h of iterRange(shape,'h',c,lockedDims,sweepCtx)){
           if(!passesAspectGuard({l,w,h})) continue;
           const vol=l*w*h;
           tryDims(l,w,h,(pL,pW,pH,cnt)=>({l,w,h,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
@@ -2468,7 +2502,7 @@ function runSuggestSize(c, shape, lockedDims, target){
       }
     }
   } else { // sphere
-    for(const d of iterRange(shape,'d',c,lockedDims)){
+    for(const d of iterRange(shape,'d',c,lockedDims,sweepCtx)){
       const vol=(4/3)*Math.PI*(d/2)*(d/2)*(d/2);
       tryDims(d,d,d,(pL,pW,pH,cnt)=>({d,count:cnt,util:vol*cnt/(c.l*c.w*c.h)*100,perL:pL,perW:pW,perH:pH}));
     }
