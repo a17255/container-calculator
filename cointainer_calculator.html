@@ -1592,6 +1592,12 @@ function packDimsToPkgObj(p){
 }
 
 function computePackZones(c, axis, packsArr){
+  // Single-pack short-circuit: zone == full container. Avoids any FP artefacts
+  // from c.l * (allocPct/100) and guarantees renderResult's util% matches the
+  // comparison table, which always computes against full c.l/c.w/c.h.
+  if(packsArr.length === 1){
+    return [{ l:c.l, w:c.w, h:c.h, offL:0, offW:0, offH:0 }];
+  }
   const zones = [];
   let cursor = 0;
   for(const p of packsArr){
@@ -1691,6 +1697,12 @@ function calculate() {
     if(typeof isDemo !== 'undefined' && isDemo) demoBump();
     return;
   }
+
+  // Single-pack invariant: pack 0 must own 100% of the container. Without this,
+  // any drift (stale multi-pack state, FP accumulation) makes zones[0] a fraction
+  // of c.l/w/h, and calcGrid's floor() silently drops a full row — producing a
+  // util% that mismatches the comparison table (which always uses the full c).
+  if(packs.length === 1) packs[0].allocPct = 100;
 
   // Allocation sum validation
   const allocSum=packs.reduce((a,p)=>a+(p.allocPct||0),0);
