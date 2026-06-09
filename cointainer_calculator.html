@@ -356,6 +356,7 @@ input[type=range]{width:65px;accent-color:#58a6ff}
     <p>Vietnam shipping containers — 3D layout · gap clearance · weight check · comparison</p>
   </div>
   <div class="hdr-right">
+    <button class="print-btn" id="btnShare" onclick="copyShareLink()" title="Copy a link containing your current config">🔗 Share</button>
     <button class="print-btn" onclick="window.print()">🖨 Print</button>
     <div id="licBadge" class="lic-badge lic-ok" onclick="showUserPanel()">✓ Licensed</div>
   </div>
@@ -1337,8 +1338,8 @@ function suggestForPack(idx){
 }
 
 const LS_KEY='cpc_v2';
-function saveState() {
-  try{localStorage.setItem(LS_KEY,JSON.stringify({
+function buildSavePayload(){
+  return {
     container:document.getElementById('containerSelect').value,
     cL:document.getElementById('cL').value,cW:document.getElementById('cW').value,cH:document.getElementById('cH').value,
     pkgType,orientation,outputMode,
@@ -1354,27 +1355,27 @@ function saveState() {
     viewAz,viewEl,
     splitAxis, viewMode,
     packsCfg: packs.map(p=>({id:p.id,name:p.name||'',shape:p.shape,dims:p.dims||{},gap:p.gap||0,weight:p.weight||0,count:p.count||0})),
-  }));}catch(e){}
+  };
 }
-function loadState() {
-  try{
-    const st=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
-    const s=(id,v)=>{if(v!==undefined&&v!==''){const el=document.getElementById(id);if(el)el.value=v;}};
-    s('containerSelect',st.container);s('cL',st.cL);s('cW',st.cW);s('cH',st.cH);
-    s('p_d',st.p_d);s('p_ch',st.p_ch);s('p_s',st.p_s);s('p_sh',st.p_sh);
-    s('p_l',st.p_l);s('p_w',st.p_w);s('p_rh',st.p_rh);s('p_sd',st.p_sd);
-    s('p_wdl',st.p_wdl);s('p_wdw',st.p_wdw);s('p_wdh',st.p_wdh);
-    s('p_bgl',st.p_bgl);s('p_bgw',st.p_bgw);s('p_bgh',st.p_bgh);
-    s('p_gap',st.p_gap);s('p_weight',st.p_weight);s('pkg_count',st.pkg_count);
-    if(st.viewAz!==undefined)viewAz=st.viewAz;
-    if(st.viewEl!==undefined){viewEl=st.viewEl;document.getElementById('elevSlider').value=Math.round(st.viewEl*180/Math.PI);}
-    if(st.pkgType)setType(st.pkgType);
-    if(st.orientation){const migr={'vertical':'z','horizontal':'x'};setOrientation(migr[st.orientation]||st.orientation);}
-    if(st.outputMode)setMode(st.outputMode);
-    if(st.splitAxis){ splitAxis=st.splitAxis; const r=document.querySelector(`input[name=splitAxis][value=${st.splitAxis}]`); if(r)r.checked=true; }
-    if(st.viewMode){ viewMode=st.viewMode; const vs=document.getElementById('viewSel'); if(vs)vs.value=viewMode; }
-    _loadedPacksCfg = Array.isArray(st.packsCfg) ? st.packsCfg : null;
-  }catch(e){}
+function saveState(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(buildSavePayload())); }catch(e){} }
+function loadState() { try{ applyState(JSON.parse(localStorage.getItem(LS_KEY)||'{}')); }catch(e){} }
+function applyState(st){
+  if(!st || typeof st!=='object') return;
+  const s=(id,v)=>{if(v!==undefined&&v!==''){const el=document.getElementById(id);if(el)el.value=v;}};
+  s('containerSelect',st.container);s('cL',st.cL);s('cW',st.cW);s('cH',st.cH);
+  s('p_d',st.p_d);s('p_ch',st.p_ch);s('p_s',st.p_s);s('p_sh',st.p_sh);
+  s('p_l',st.p_l);s('p_w',st.p_w);s('p_rh',st.p_rh);s('p_sd',st.p_sd);
+  s('p_wdl',st.p_wdl);s('p_wdw',st.p_wdw);s('p_wdh',st.p_wdh);
+  s('p_bgl',st.p_bgl);s('p_bgw',st.p_bgw);s('p_bgh',st.p_bgh);
+  s('p_gap',st.p_gap);s('p_weight',st.p_weight);s('pkg_count',st.pkg_count);
+  if(st.viewAz!==undefined)viewAz=st.viewAz;
+  if(st.viewEl!==undefined){viewEl=st.viewEl;const es=document.getElementById('elevSlider');if(es)es.value=Math.round(st.viewEl*180/Math.PI);}
+  if(st.pkgType)setType(st.pkgType);
+  if(st.orientation){const migr={'vertical':'z','horizontal':'x'};setOrientation(migr[st.orientation]||st.orientation);}
+  if(st.outputMode)setMode(st.outputMode);
+  if(st.splitAxis){ splitAxis=st.splitAxis; const r=document.querySelector(`input[name=splitAxis][value=${st.splitAxis}]`); if(r)r.checked=true; }
+  if(st.viewMode){ viewMode=st.viewMode; const vs=document.getElementById('viewSel'); if(vs)vs.value=viewMode; }
+  _loadedPacksCfg = Array.isArray(st.packsCfg) ? st.packsCfg : null;
 }
 
 // Merge persisted packs[] config into the live array (called in init after
@@ -1400,6 +1401,72 @@ function applyLoadedPacksCfg(){
     });
   }
   _loadedPacksCfg=null;
+}
+
+// ───────── Share link (full config encoded in URL hash) ─────────
+function copyShareLink(){
+  try{
+    const json=JSON.stringify(buildSavePayload());
+    const b64=btoa(unescape(encodeURIComponent(json)));   // UTF-8 safe
+    const url=location.origin+location.pathname+'#cfg='+b64;
+    const done=()=>shareToast('🔗 Link copied — recipients with a license can edit; others see a read-only view.');
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(done, ()=>window.prompt('Copy this share link:', url));
+    } else { window.prompt('Copy this share link:', url); }
+  }catch(e){ alert('Could not build share link.'); }
+}
+function shareToast(msg){
+  let t=document.getElementById('shareToast');
+  if(!t){ t=document.createElement('div'); t.id='shareToast';
+    t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1f6feb;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:10002;box-shadow:0 4px 16px rgba(0,0,0,.4);max-width:90%;text-align:center';
+    document.body.appendChild(t); }
+  t.textContent=msg; t.style.display='block';
+  clearTimeout(t._h); t._h=setTimeout(()=>{ t.style.display='none'; }, 4500);
+}
+function parseShareHash(){
+  try{
+    const m=(location.hash||'').match(/[#&]cfg=([^&]+)/);
+    if(!m) return null;
+    const cfg=JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    return (cfg && typeof cfg==='object') ? cfg : null;
+  }catch(e){ return null; }
+}
+function applyShareConfig(cfg){
+  if(!cfg) return;
+  applyState(cfg);   // DOM fields + mode + splitAxis + viewMode + _loadedPacksCfg
+  packs = [{ id:1, name:'', shape:pkgType, dims:{}, gap:0, weight:0, count:0, color:packColor(0) }];
+  seedPack0FromLegacy();
+  if(cfg.packsCfg && cfg.packsCfg[0] && cfg.packsCfg[0].name) packs[0].name=cfg.packsCfg[0].name;
+  applyLoadedPacksCfg();
+  onContainerChange();
+  updateContainerDims();
+  renderPacksPanel();
+  try{ calculate(); }catch(e){}
+}
+// Read-only shared view: bypasses the license to SHOW a config; no editing,
+// never writes cpc_lic. Reachable only with a valid #cfg= hash and no license.
+function enterReadOnlyShare(cfg){
+  isDemo=false;
+  const ls=document.getElementById('lockScreen'); if(ls)ls.style.display='none';
+  document.getElementById('app').classList.add('unlocked');
+  init();
+  applyShareConfig(cfg);
+  lockDownReadOnly();
+}
+function lockDownReadOnly(){
+  document.querySelectorAll('.left input, .left select, .left button, .left textarea').forEach(el=>{ el.disabled=true; });
+  const pr=document.getElementById('panelResizer'); if(pr)pr.style.display='none';
+  const sb=document.getElementById('btnShare'); if(sb)sb.style.display='none';
+  const pb=document.querySelector('.print-btn'); if(pb)pb.style.display='none';
+  const badge=document.getElementById('licBadge');
+  if(badge){ badge.className='lic-badge lic-ok'; badge.textContent='👁 Shared (read-only)'; badge.onclick=null; }
+  if(!document.getElementById('roBanner')){
+    const b=document.createElement('div'); b.id='roBanner';
+    b.style.cssText='background:#1f6feb;color:#fff;padding:7px 12px;text-align:center;font-size:13px';
+    b.innerHTML='👁 Read-only shared view — <a href="'+location.pathname+'" style="color:#fff;text-decoration:underline">open the full app</a> (license required) to edit.';
+    const app=document.getElementById('app'), main=document.querySelector('.main');
+    if(app && main) app.insertBefore(b, main);
+  }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2745,7 +2812,19 @@ function applySuggestion(...args){
 // BOOT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 setupAdminAccess();
-checkStoredLicense();
+(function(){
+  const cfg = parseShareHash();
+  if(cfg){
+    // A shared link is present: licensed visitors get it editable; everyone
+    // else gets a read-only view that bypasses the lock screen.
+    Promise.resolve(checkStoredLicense()).then(unlocked=>{
+      if(unlocked){ try{ applyShareConfig(cfg); }catch(e){} }
+      else { try{ enterReadOnlyShare(cfg); }catch(e){} }
+    }).catch(()=>{ try{ enterReadOnlyShare(cfg); }catch(e){} });
+  } else {
+    checkStoredLicense();   // normal license gate — unchanged
+  }
+})();
 </script>
 </body>
 </html>
