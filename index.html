@@ -175,6 +175,8 @@ select:focus,input:focus{border-color:#58a6ff}
 .rot-btn.active{border-color:#388bfd;color:#388bfd;background:rgba(56,139,253,.1)}
 #viewLbl{font-size:0.7rem;color:#6e7681;min-width:62px;text-align:center}
 .el-wrap{display:flex;align-items:center;gap:5px;font-size:0.7rem;color:#6e7681}
+.view-wrap{display:flex;align-items:center;gap:5px;font-size:0.7rem;color:#6e7681}
+.view-wrap select{background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:0.72rem;padding:2px 5px;cursor:pointer}
 input[type=range]{width:65px;accent-color:#58a6ff}
 .canvas-wrap{flex:1;position:relative;min-height:200px;overflow:hidden}
 #viz3d{display:block;width:100%;height:100%;cursor:grab;border-radius:7px;border:1px solid #30363d}
@@ -200,6 +202,8 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 .split-axis label { display:flex; align-items:center; gap:4px; cursor:pointer; }
 .pack-card { border:1px solid #30363d; border-left:4px solid var(--pack-color,#3fb950); border-radius:4px; padding:10px; margin-bottom:10px; background:#161b22; }
 .pack-card-hdr { display:flex; justify-content:space-between; align-items:center; font-weight:600; margin-bottom:6px; color:#c9d1d9; }
+.pack-name { cursor:text; border-bottom:1px dotted #484f58; }
+.pack-name:hover { border-bottom-color:#58a6ff; }
 .pack-color-swatch { display:inline-block; width:12px; height:12px; border-radius:2px; margin-right:6px; vertical-align:middle; }
 .pack-card label { display:flex; align-items:center; gap:6px; margin:4px 0; font-size:13px; color:#c9d1d9; }
 .pack-card label > input[type=number], .pack-card label > select { flex:1; }
@@ -352,6 +356,7 @@ input[type=range]{width:65px;accent-color:#58a6ff}
     <p>Vietnam shipping containers — 3D layout · gap clearance · weight check · comparison</p>
   </div>
   <div class="hdr-right">
+    <button class="print-btn" id="btnShare" onclick="copyShareLink()" title="Copy a link containing your current config">🔗 Share</button>
     <button class="print-btn" onclick="window.print()">🖨 Print</button>
     <div id="licBadge" class="lic-badge lic-ok" onclick="showUserPanel()">✓ Licensed</div>
   </div>
@@ -464,10 +469,9 @@ input[type=range]{width:65px;accent-color:#58a6ff}
   <div class="packs-panel">
     <div class="packs-hdr">
       <span>Additional packages</span>
-      <span class="alloc-sum ok" id="allocSum">Sum: 100% ✓</span>
     </div>
     <div class="split-axis" id="splitAxisRow">
-      <span>Split axis:</span>
+      <span>Fill axis:</span>
       <label><input type="radio" name="splitAxis" value="L" checked> L</label>
       <label><input type="radio" name="splitAxis" value="W"> W</label>
       <label><input type="radio" name="splitAxis" value="H"> H</label>
@@ -581,6 +585,15 @@ input[type=range]{width:65px;accent-color:#58a6ff}
         <button class="rot-btn" id="vSE" onclick="setPreset(315)">SE</button>
         <span style="color:#484f58">|</span>
         <div class="el-wrap">Elev<input type="range" id="elevSlider" min="15" max="60" value="30" oninput="onElevChange()"></div>
+        <span style="color:#484f58">|</span>
+        <label class="view-wrap">View
+          <select id="viewSel" onchange="setViewMode(this.value)">
+            <option value="compact">Compact</option>
+            <option value="layered">Layered</option>
+            <option value="top2d">Top-down 2D</option>
+            <option value="exploded">Exploded</option>
+          </select>
+        </label>
         <span style="color:#484f58">|</span>
         <button id="btn3dFull" class="btn-fullscreen" onclick="toggle3dFullscreen()" title="Fullscreen 3D (Esc to exit)">⛶ Fullscreen</button>
       </div>
@@ -1022,12 +1035,11 @@ function applyDemoRestrictions(){
     document.querySelectorAll('.btn-remove').forEach(b => b.style.display='none');
     if(packs.length>1){
       packs = packs.slice(0,1);
-      packs[0].allocPct = 100;
       renderPacksPanel();
     }
   } else {
     const addBtn=document.getElementById('btnAddPack');
-    if(addBtn) addBtn.disabled=(packs.length>=10);
+    if(addBtn) addBtn.disabled=(packs.length>=maxPacks());
     document.querySelectorAll('.btn-remove').forEach(b => b.style.display='');
   }
   updateDemoCounterUI();
@@ -1118,13 +1130,21 @@ const PRESETS = {
 let pkgType='cylinder', orientation='z', outputMode='auto';
 let viewAz=Math.PI/4, viewEl=Math.PI/6, lastViz=null;
 let cmpVisible=true;
+let viewMode='compact'; // 'compact' | 'layered' | 'top2d' | 'exploded'
+let _loadedPacksCfg=null; // packs[] config parsed from storage, merged in init()
 
 // Array-based pack state
 let packs = [
-  { id: 1, shape: 'cylinder', dims: {}, gap: 0, weight: 0, allocPct: 100, color: '#3fb950' }
+  { id: 1, name: '', shape: 'cylinder', dims: {}, gap: 0, weight: 0, count: 0, color: '#3fb950' }
 ];
-let splitAxis = 'L'; // 'L' | 'W' | 'H' | 'auto'
-const PACK_COLORS = ['#3fb950', '#4ecca3', '#f0883e'];
+let splitAxis = 'L'; // fill axis: 'L' | 'W' | 'H' | 'auto'
+const PACK_COLORS = ['#3fb950','#4ecca3','#f0883e','#58a6ff','#bc8cff','#f778ba','#ffa657','#7ee787',
+  '#ff7b72','#79c0ff','#d2a8ff','#ffdf5d','#56d364','#e3b341','#db61a2','#a5d6ff','#ffab70','#85e89d',
+  '#b392f0','#f97583'];
+function packColor(i){ return PACK_COLORS[i % PACK_COLORS.length]; }
+// packLabel: custom name or fallback "Pack N"
+function packLabel(p){ return (p && p.name && p.name.trim()) ? p.name.trim() : ('Pack ' + (p ? p.id : '?')); }
+function maxPacks(){ return outputMode==='custom' ? 20 : 10; }
 
 function readDimsForShape(shape, suffix){
   const g = (id) => +(document.getElementById('p'+suffix+'_'+id)?.value || 0);
@@ -1171,10 +1191,9 @@ function renderPacksPanel(){
   // Legacy primary section IS Pack 1 — only render Pack 2+ here.
   const extras = packs.slice(1);
   list.innerHTML = extras.map((p, i) => packCardHTML(p, i + 1)).join('');
-  updateAllocSum();
   extras.forEach((_, i) => wirePackCard(i + 1));
   const btn = document.getElementById('btnAddPack');
-  if(btn) btn.disabled = packs.length >= 10;
+  if(btn) btn.disabled = packs.length >= maxPacks();
   const autoLbl = document.getElementById('autoAxisLabel');
   if(autoLbl) autoLbl.style.display = (typeof outputMode !== 'undefined' && outputMode === 'auto') ? '' : 'none';
   if(typeof isDemo !== 'undefined' && isDemo){
@@ -1190,7 +1209,7 @@ function packCardHTML(p, idx){
   return (
     `<div class="pack-card" style="--pack-color:${p.color}" data-pack-idx="${idx}">
       <div class="pack-card-hdr">
-        <span><span class="pack-color-swatch" style="background:${p.color}"></span>Pack ${p.id}</span>
+        <span><span class="pack-color-swatch" style="background:${p.color}"></span><span class="pack-name" title="Double-click to rename">${packLabel(p)}</span></span>
         ${removeBtn}
       </div>
       <label>Shape:
@@ -1203,11 +1222,6 @@ function packCardHTML(p, idx){
       <label>Gap (cm): <input type="number" class="pack-gap" value="${p.gap||0}" min="0" step="1"></label>
       <label>Weight (kg): <input type="number" class="pack-weight" value="${p.weight||0}" min="0" step="0.1"></label>
       ${outputMode==='custom' ? `<label>Number of Packages: <input type="number" class="pack-count" value="${p.count||''}" min="1" step="1" placeholder="qty to check"></label>` : ''}
-      <div class="alloc-row">
-        <label>Alloc:</label>
-        <input type="range" class="pack-alloc" min="0" max="100" step="1" value="${p.allocPct}">
-        <span class="pack-alloc-val">${p.allocPct}%</span>
-      </div>
       <button class="btn-suggest-pack" onclick="suggestForPack(${idx})">🔍 Suggest dims for this pack</button>
     </div>`
   );
@@ -1236,8 +1250,24 @@ function wirePackCard(idx){
   if(!card) return;
   card.querySelector('.pack-shape').addEventListener('change', e => {
     packs[idx].shape = e.target.value;
-    packs[idx].dims = {};
+    // Keep dims: shared keys (l/w/h, d/h, s/h, d) survive shape switches;
+    // packDimsInputsHTML only reads the keys relevant to the new shape.
     renderPacksPanel();
+  });
+  const nameEl = card.querySelector('.pack-name');
+  if(nameEl) nameEl.addEventListener('dblclick', () => {
+    const inp = document.createElement('input');
+    inp.type='text'; inp.value = packs[idx].name || ''; inp.className='pack-name-edit';
+    inp.placeholder = 'Pack '+packs[idx].id;
+    inp.style.cssText = 'width:100px;font:inherit;padding:1px 3px';
+    nameEl.replaceWith(inp); inp.focus(); inp.select();
+    let done=false;
+    const commit = () => { if(done) return; done=true; packs[idx].name = inp.value.trim(); saveState(); renderPacksPanel(); };
+    inp.addEventListener('keydown', e => {
+      if(e.key==='Enter'){ commit(); }
+      else if(e.key==='Escape'){ done=true; renderPacksPanel(); }
+    });
+    inp.addEventListener('blur', commit);
   });
   card.querySelectorAll('.pack-dim').forEach(inp => {
     inp.addEventListener('input', e => { packs[idx].dims[e.target.dataset.key] = +e.target.value; });
@@ -1246,56 +1276,30 @@ function wirePackCard(idx){
   card.querySelector('.pack-weight').addEventListener('input', e => { packs[idx].weight = +e.target.value; });
   const cnt = card.querySelector('.pack-count');
   if(cnt) cnt.addEventListener('input', e => { packs[idx].count = parseInt(e.target.value)||0; });
-  const alloc = card.querySelector('.pack-alloc');
-  const allocVal = card.querySelector('.pack-alloc-val');
-  alloc.addEventListener('input', e => {
-    packs[idx].allocPct = +e.target.value;
-    allocVal.textContent = packs[idx].allocPct + '%';
-    updateAllocSum();
-  });
-}
-
-function updateAllocSum(){
-  const sum = packs.reduce((a,p)=>a+(p.allocPct||0),0);
-  const el = document.getElementById('allocSum');
-  if(!el) return;
-  el.textContent = `Sum: ${sum.toFixed(0)}% ${Math.abs(sum-100)<0.5?'✓':'✗'}`;
-  el.className = `alloc-sum ${Math.abs(sum-100)<0.5?'ok':'bad'}`;
 }
 
 function addPack(){
-  if(packs.length >= 10) return;
+  if(packs.length >= maxPacks()) return;
   const last = packs[packs.length - 1];
   const newId = packs.length + 1;
   packs.push({
     id: newId,
+    name: '',
     shape: last.shape || 'cylinder',
     dims: {},
     gap: last.gap || 0,
     weight: 0,
     count: 0,
-    allocPct: 0,
-    color: PACK_COLORS[packs.length]
+    color: packColor(packs.length)
   });
-  rebalanceAlloc();
   renderPacksPanel();
 }
 
 function removePack(idx){
   if(idx <= 0 || idx >= packs.length) return;
   packs.splice(idx, 1);
-  packs.forEach((p,i) => { p.id = i + 1; p.color = PACK_COLORS[i]; });
-  rebalanceAlloc();
+  packs.forEach((p,i) => { p.id = i + 1; p.color = packColor(i); });
   renderPacksPanel();
-}
-
-function rebalanceAlloc(){
-  const n = packs.length;
-  if(n === 0) return;
-  const even = Math.floor(100 / n);
-  packs.forEach(p => { p.allocPct = even; });
-  const sum = packs.reduce((a,p)=>a+p.allocPct, 0);
-  packs[0].allocPct += (100 - sum);
 }
 
 function suggestForPack(idx){
@@ -1312,7 +1316,7 @@ function suggestForPack(idx){
     }[packs[i].shape] || [];
     for(const k of required){
       if(!(d[k] > 0)){
-        alert(`Fill dimensions for Pack ${packs[i].id} (${packs[i].shape}) first.`);
+        alert(`Fill dimensions for ${packLabel(packs[i])} (${packs[i].shape}) first.`);
         return;
       }
     }
@@ -1320,20 +1324,22 @@ function suggestForPack(idx){
 
   const c = getContainerDims();
   const axis = splitAxis === 'auto' ? 'L' : splitAxis;
-  const zones = computePackZones(c, axis, packs);
-  const z = zones[idx];
-  if(!z || z.l <= 0 || z.w <= 0 || z.h <= 0){
-    alert("No space remaining — increase this pack's allocation.");
+  // Free space = container minus what earlier packs (0..idx-1) consume when packed compactly.
+  const sub = packs.slice(0, idx).map((_,i)=>buildPkgObj(i));
+  const used = packCompact(c, axis, sub, 'auto', null).placements
+                 .reduce((a,pl)=> a + (axis==='L'?pl.slab.l : axis==='W'?pl.slab.w : pl.slab.h), 0);
+  const z = { l:c.l, w:c.w, h:c.h };
+  if(axis==='L') z.l=Math.max(0,c.l-used); else if(axis==='W') z.w=Math.max(0,c.w-used); else z.h=Math.max(0,c.h-used);
+  if(z.l<=0 || z.w<=0 || z.h<=0){
+    alert("No space remaining for this pack — earlier packs fill the container.");
     return;
   }
-  const shape = packs[idx].shape;
-  const reducedContainer = { l: z.l, w: z.w, h: z.h };
-  runSuggestSize(reducedContainer, shape, {}, 0);
+  runSuggestSize({ l:z.l, w:z.w, h:z.h }, packs[idx].shape, {}, 0);
 }
 
 const LS_KEY='cpc_v2';
-function saveState() {
-  try{localStorage.setItem(LS_KEY,JSON.stringify({
+function buildSavePayload(){
+  return {
     container:document.getElementById('containerSelect').value,
     cL:document.getElementById('cL').value,cW:document.getElementById('cW').value,cH:document.getElementById('cH').value,
     pkgType,orientation,outputMode,
@@ -1347,24 +1353,120 @@ function saveState() {
     p_weight:document.getElementById('p_weight').value,
     pkg_count:document.getElementById('pkg_count').value,
     viewAz,viewEl,
-  }));}catch(e){}
+    splitAxis, viewMode,
+    packsCfg: packs.map(p=>({id:p.id,name:p.name||'',shape:p.shape,dims:p.dims||{},gap:p.gap||0,weight:p.weight||0,count:p.count||0})),
+  };
 }
-function loadState() {
+function saveState(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(buildSavePayload())); }catch(e){} }
+function loadState() { try{ applyState(JSON.parse(localStorage.getItem(LS_KEY)||'{}')); }catch(e){} }
+function applyState(st){
+  if(!st || typeof st!=='object') return;
+  const s=(id,v)=>{if(v!==undefined&&v!==''){const el=document.getElementById(id);if(el)el.value=v;}};
+  s('containerSelect',st.container);s('cL',st.cL);s('cW',st.cW);s('cH',st.cH);
+  s('p_d',st.p_d);s('p_ch',st.p_ch);s('p_s',st.p_s);s('p_sh',st.p_sh);
+  s('p_l',st.p_l);s('p_w',st.p_w);s('p_rh',st.p_rh);s('p_sd',st.p_sd);
+  s('p_wdl',st.p_wdl);s('p_wdw',st.p_wdw);s('p_wdh',st.p_wdh);
+  s('p_bgl',st.p_bgl);s('p_bgw',st.p_bgw);s('p_bgh',st.p_bgh);
+  s('p_gap',st.p_gap);s('p_weight',st.p_weight);s('pkg_count',st.pkg_count);
+  if(st.viewAz!==undefined)viewAz=st.viewAz;
+  if(st.viewEl!==undefined){viewEl=st.viewEl;const es=document.getElementById('elevSlider');if(es)es.value=Math.round(st.viewEl*180/Math.PI);}
+  if(st.pkgType)setType(st.pkgType);
+  if(st.orientation){const migr={'vertical':'z','horizontal':'x'};setOrientation(migr[st.orientation]||st.orientation);}
+  if(st.outputMode)setMode(st.outputMode);
+  if(st.splitAxis){ splitAxis=st.splitAxis; const r=document.querySelector(`input[name=splitAxis][value=${st.splitAxis}]`); if(r)r.checked=true; }
+  if(st.viewMode){ viewMode=st.viewMode; const vs=document.getElementById('viewSel'); if(vs)vs.value=viewMode; }
+  _loadedPacksCfg = Array.isArray(st.packsCfg) ? st.packsCfg : null;
+}
+
+// Merge persisted packs[] config into the live array (called in init after
+// pack 0 is seeded from the legacy DOM inputs). Entry 0 contributes only the
+// custom name; entries 1+ rebuild the extra packs.
+function applyLoadedPacksCfg(){
+  if(typeof isDemo!=='undefined' && isDemo){ _loadedPacksCfg=null; return; } // demo = single pack
+  if(!_loadedPacksCfg || !_loadedPacksCfg.length){ _loadedPacksCfg=null; return; }
+  const c0=_loadedPacksCfg[0];
+  if(c0){ if(c0.name) packs[0].name=c0.name; if(c0.count) packs[0].count=c0.count; }
+  const cap=maxPacks();
+  for(let i=1; i<_loadedPacksCfg.length && packs.length<cap; i++){
+    const cfg=_loadedPacksCfg[i]||{};
+    packs.push({
+      id: packs.length+1,
+      name: cfg.name||'',
+      shape: cfg.shape||'cylinder',
+      dims: cfg.dims||{},
+      gap: cfg.gap||0,
+      weight: cfg.weight||0,
+      count: cfg.count||0,
+      color: packColor(packs.length)
+    });
+  }
+  _loadedPacksCfg=null;
+}
+
+// ───────── Share link (full config encoded in URL hash) ─────────
+function copyShareLink(){
   try{
-    const st=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
-    const s=(id,v)=>{if(v!==undefined&&v!==''){const el=document.getElementById(id);if(el)el.value=v;}};
-    s('containerSelect',st.container);s('cL',st.cL);s('cW',st.cW);s('cH',st.cH);
-    s('p_d',st.p_d);s('p_ch',st.p_ch);s('p_s',st.p_s);s('p_sh',st.p_sh);
-    s('p_l',st.p_l);s('p_w',st.p_w);s('p_rh',st.p_rh);s('p_sd',st.p_sd);
-    s('p_wdl',st.p_wdl);s('p_wdw',st.p_wdw);s('p_wdh',st.p_wdh);
-    s('p_bgl',st.p_bgl);s('p_bgw',st.p_bgw);s('p_bgh',st.p_bgh);
-    s('p_gap',st.p_gap);s('p_weight',st.p_weight);s('pkg_count',st.pkg_count);
-    if(st.viewAz!==undefined)viewAz=st.viewAz;
-    if(st.viewEl!==undefined){viewEl=st.viewEl;document.getElementById('elevSlider').value=Math.round(st.viewEl*180/Math.PI);}
-    if(st.pkgType)setType(st.pkgType);
-    if(st.orientation){const migr={'vertical':'z','horizontal':'x'};setOrientation(migr[st.orientation]||st.orientation);}
-    if(st.outputMode)setMode(st.outputMode);
-  }catch(e){}
+    const json=JSON.stringify(buildSavePayload());
+    const b64=btoa(unescape(encodeURIComponent(json)));   // UTF-8 safe
+    const url=location.origin+location.pathname+'#cfg='+b64;
+    const done=()=>shareToast('🔗 Link copied — recipients with a license can edit; others see a read-only view.');
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(done, ()=>window.prompt('Copy this share link:', url));
+    } else { window.prompt('Copy this share link:', url); }
+  }catch(e){ alert('Could not build share link.'); }
+}
+function shareToast(msg){
+  let t=document.getElementById('shareToast');
+  if(!t){ t=document.createElement('div'); t.id='shareToast';
+    t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1f6feb;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:10002;box-shadow:0 4px 16px rgba(0,0,0,.4);max-width:90%;text-align:center';
+    document.body.appendChild(t); }
+  t.textContent=msg; t.style.display='block';
+  clearTimeout(t._h); t._h=setTimeout(()=>{ t.style.display='none'; }, 4500);
+}
+function parseShareHash(){
+  try{
+    const m=(location.hash||'').match(/[#&]cfg=([^&]+)/);
+    if(!m) return null;
+    const cfg=JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    return (cfg && typeof cfg==='object') ? cfg : null;
+  }catch(e){ return null; }
+}
+function applyShareConfig(cfg){
+  if(!cfg) return;
+  applyState(cfg);   // DOM fields + mode + splitAxis + viewMode + _loadedPacksCfg
+  packs = [{ id:1, name:'', shape:pkgType, dims:{}, gap:0, weight:0, count:0, color:packColor(0) }];
+  seedPack0FromLegacy();
+  if(cfg.packsCfg && cfg.packsCfg[0] && cfg.packsCfg[0].name) packs[0].name=cfg.packsCfg[0].name;
+  applyLoadedPacksCfg();
+  onContainerChange();
+  updateContainerDims();
+  renderPacksPanel();
+  try{ calculate(); }catch(e){}
+}
+// Read-only shared view: bypasses the license to SHOW a config; no editing,
+// never writes cpc_lic. Reachable only with a valid #cfg= hash and no license.
+function enterReadOnlyShare(cfg){
+  isDemo=false;
+  const ls=document.getElementById('lockScreen'); if(ls)ls.style.display='none';
+  document.getElementById('app').classList.add('unlocked');
+  init();
+  applyShareConfig(cfg);
+  lockDownReadOnly();
+}
+function lockDownReadOnly(){
+  document.querySelectorAll('.left input, .left select, .left button, .left textarea').forEach(el=>{ el.disabled=true; });
+  const pr=document.getElementById('panelResizer'); if(pr)pr.style.display='none';
+  const sb=document.getElementById('btnShare'); if(sb)sb.style.display='none';
+  const pb=document.querySelector('.print-btn'); if(pb)pb.style.display='none';
+  const badge=document.getElementById('licBadge');
+  if(badge){ badge.className='lic-badge lic-ok'; badge.textContent='👁 Shared (read-only)'; badge.onclick=null; }
+  if(!document.getElementById('roBanner')){
+    const b=document.createElement('div'); b.id='roBanner';
+    b.style.cssText='background:#1f6feb;color:#fff;padding:7px 12px;text-align:center;font-size:13px';
+    b.innerHTML='👁 Read-only shared view — <a href="'+location.pathname+'" style="color:#fff;text-decoration:underline">open the full app</a> (license required) to edit.';
+    const app=document.getElementById('app'), main=document.querySelector('.main');
+    if(app && main) app.insertBefore(b, main);
+  }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1394,6 +1496,7 @@ function init() {
   drawEmpty3D();
   initMobileTabs();
   seedPack0FromLegacy();
+  applyLoadedPacksCfg();
   renderPacksPanel();
   updateDemoCounterUI();
   document.querySelectorAll('input[name=splitAxis]').forEach(r => {
@@ -1596,45 +1699,97 @@ function packDimsToPkgObj(p){
   return { type:p.shape, footL, footW, stackH, vol, gap, weight:p.weight, color:p.color };
 }
 
-function computePackZones(c, axis, packsArr){
-  // Single-pack short-circuit: zone == full container. Avoids any FP artefacts
-  // from c.l * (allocPct/100) and guarantees renderResult's util% matches the
-  // comparison table, which always computes against full c.l/c.w/c.h.
-  if(packsArr.length === 1){
-    return [{ l:c.l, w:c.w, h:c.h, offL:0, offW:0, offH:0 }];
+// ───────── Compact sequential-fill packer ─────────
+// The container is ONE shared space. Packs are placed in order along `axis`;
+// each consumes a contiguous slab, the cursor advances, and leftover space
+// flows to the next pack. Overload (custom mode) is a whole-SET condition
+// (Σplaced < Σwant), never per-zone. Single pack => one full-container slab,
+// which reproduces the legacy single-pack grid exactly.
+function buildPkgObj(i){
+  // Pack 0 uses legacy getPkgDims()/getPkgVolume() so DOM orientation + gap
+  // (mm→cm) are preserved and single-pack output stays byte-identical.
+  if(i===0){
+    const base=getPkgDims();
+    return { type:packs[0].shape, footL:base.footL, footW:base.footW, stackH:base.stackH,
+      gap:base.gap, vol:getPkgVolume(),
+      weight:packs[0].weight||(parseFloat(document.getElementById('p_weight').value)||0),
+      color:packs[0].color };
   }
-  const zones = [];
-  let cursor = 0;
-  for(const p of packsArr){
-    const frac = (p.allocPct || 0) / 100;
-    let z = { l:c.l, w:c.w, h:c.h, offL:0, offW:0, offH:0 };
-    if(axis === 'L'){ z.l = c.l * frac; z.offL = cursor; cursor += z.l; }
-    else if(axis === 'W'){ z.w = c.w * frac; z.offW = cursor; cursor += z.w; }
-    else if(axis === 'H'){ z.h = c.h * frac; z.offH = cursor; cursor += z.h; }
-    zones.push(z);
-  }
-  return zones;
+  return getPackDims(i);
 }
 
-function tryAllAxes(c, packsArr){
-  const axes = ['L','W','H'];
-  const results = {};
-  let best = null;
-  for(const ax of axes){
-    const zz = computePackZones(c, ax, packsArr);
-    let total = 0;
-    const perPack = [];
-    for(let i=0; i<packsArr.length; i++){
-      const p = getPackDims(i);
-      if(!p || !p.footL || !p.stackH){ perPack.push({perL:0,perW:0,perH:0,count:0}); continue; }
-      const g = calcGrid(zz[i], p);
-      perPack.push(g);
-      total += g.count;
+function emptyPlacement(pack, pkgObj, axis, cursor, want){
+  const slab={ l:0,w:0,h:0, offL:0,offW:0,offH:0 };
+  if(axis==='L') slab.offL=cursor; else if(axis==='W') slab.offW=cursor; else slab.offH=cursor;
+  return { pack, pkgObj, grid:{perL:0,perW:0,perH:0,count:0}, capInRemain:0,
+    slab, zone:slab, placedCount:0, fillAxis:axis, inputCount:want };
+}
+
+function packCompact(c, axis, pkgObjs, mode, wants){
+  const placements=[];
+  let totalCount=0, totalVol=0, totalWeight=0, totalRequested=0, cursor=0;
+  const fullA = axis==='L'?c.l : axis==='W'?c.w : c.h;
+  for(let i=0;i<pkgObjs.length;i++){
+    const pkgObj=pkgObjs[i];
+    const want = (mode==='custom') ? (wants[i]||0) : Infinity;
+    if(mode==='custom') totalRequested += (wants[i]||0);
+    if(!pkgObj || !pkgObj.footL || !pkgObj.stackH) continue;   // invalid/empty dims
+    if(mode==='custom' && want<=0) continue;                   // not requested → skip
+    const remA = Math.max(0, fullA - cursor);
+    if(remA<=0){
+      if(mode==='custom') placements.push(emptyPlacement(packs[i],pkgObj,axis,cursor,want));
+      continue;
     }
-    results[ax] = { total, zones: zz, perPack };
-    if(!best || total > results[best.axis].total) best = { axis: ax };
+    const box={ l:c.l, w:c.w, h:c.h, offL:0, offW:0, offH:0 };
+    if(axis==='L'){ box.l=remA; box.offL=cursor; }
+    else if(axis==='W'){ box.w=remA; box.offW=cursor; }
+    else { box.h=remA; box.offH=cursor; }
+    const grid=calcGrid(box, pkgObj);          // capacity within the remaining box
+    const cap=grid.count;
+    const gap=pkgObj.gap||0;
+    const stepA=(axis==='L'?pkgObj.footL : axis==='W'?pkgObj.footW : pkgObj.stackH)+gap;
+    const perA=axis==='L'?grid.perL : axis==='W'?grid.perW : grid.perH;
+    const crossCount=perA>0 ? cap/perA : 0;    // = product of the two non-axis pers
+    let placedCount, shelvesUsed;
+    if(mode==='custom'){
+      placedCount=Math.min(want, cap);
+      shelvesUsed=crossCount>0 ? Math.ceil(placedCount/crossCount) : 0;
+    } else {
+      placedCount=cap; shelvesUsed=perA;
+    }
+    if(placedCount<=0){
+      if(mode==='custom') placements.push(emptyPlacement(packs[i],pkgObj,axis,cursor,want));
+      continue;
+    }
+    const consumedA = shelvesUsed>0 ? shelvesUsed*stepA-gap : 0;
+    const slab={ l:c.l, w:c.w, h:c.h, offL:0, offW:0, offH:0 };
+    if(axis==='L'){ slab.l=consumedA; slab.offL=cursor; }
+    else if(axis==='W'){ slab.w=consumedA; slab.offW=cursor; }
+    else { slab.h=consumedA; slab.offH=cursor; }
+    // grid for drawing/labels: replace the axis-per with shelvesUsed so the
+    // draw loop never paints past the slab; keep `count` = true capacity.
+    const dgrid={ perL:grid.perL, perW:grid.perW, perH:grid.perH, count:cap };
+    if(axis==='L') dgrid.perL=shelvesUsed; else if(axis==='W') dgrid.perW=shelvesUsed; else dgrid.perH=shelvesUsed;
+    placements.push({
+      pack:packs[i], pkgObj, grid:dgrid, capInRemain:cap, slab, zone:slab,
+      placedCount, fillAxis:axis, inputCount:(mode==='custom'?want:undefined)
+    });
+    totalCount+=placedCount;
+    totalVol+=placedCount*(pkgObj.vol||0);
+    totalWeight+=placedCount*(pkgObj.weight||0);
+    cursor+=consumedA;   // inter-pack gap = 0 (leftover flows to next pack)
   }
-  return { best: best.axis, results };
+  return { placements, totalCount, totalVol, totalWeight, totalRequested };
+}
+
+function tryAllAxesCompact(c, pkgObjs, mode, wants){
+  const axes=['L','W','H']; const results={}; let best=null;
+  for(const ax of axes){
+    const r=packCompact(c, ax, pkgObjs, mode, wants);
+    results[ax]=r;
+    if(best===null || r.totalCount>results[best].totalCount) best=ax;
+  }
+  return { best, results };
 }
 
 function getPkgVolume() {
@@ -1703,94 +1858,55 @@ function calculate() {
     return;
   }
 
-  // Single-pack invariant: pack 0 must own 100% of the container. Without this,
-  // any drift (stale multi-pack state, FP accumulation) makes zones[0] a fraction
-  // of c.l/w/h, and calcGrid's floor() silently drops a full row — producing a
-  // util% that mismatches the comparison table (which always uses the full c).
-  if(packs.length === 1) packs[0].allocPct = 100;
+  // Build per-pack package objects (pack 0 keeps legacy orientation-aware dims).
+  const pkgObjs = packs.map((_,i)=>buildPkgObj(i));
 
-  // Allocation sum validation
-  const allocSum=packs.reduce((a,p)=>a+(p.allocPct||0),0);
-  if(Math.abs(allocSum-100)>0.5){
-    showErr('Pack allocation must sum to 100% (current: '+allocSum.toFixed(0)+'%).');return;
+  // Primary-pack size/fit checks (preserve legacy error UX).
+  const p0=pkgObjs[0];
+  if(!p0 || p0.footL<=0||p0.footW<=0||p0.stackH<=0){showErr('Package dimensions must be > 0.');return;}
+  if(p0.footL>c.l||p0.footW>c.w||p0.stackH>c.h){
+    const d=p0.footL>c.l?`L ${p0.footL}>${c.l}cm`:p0.footW>c.w?`W ${p0.footW}>${c.w}cm`:`H ${p0.stackH}>${c.h}cm`;
+    showErr('Package larger than container! ('+d+')');return;
   }
 
-  // Build pkg objects per pack. For pack 0, use getPkgDims() so orientation
-  // from DOM is preserved (single-pack behavior must match legacy).
-  let chosenAxis = splitAxis;
-  let autoReport = '';
-  if(splitAxis === 'auto' && outputMode === 'auto'){
-    const solved = tryAllAxes(c, packs);
+  // Custom (Status Check): collect a target count per pack. Pack 1 from the
+  // global #pkg_count; packs 2+ from their per-card count.
+  let wants=null;
+  if(outputMode==='custom'){
+    const c0=parseInt(document.getElementById('pkg_count').value)||0;
+    if(c0<=0){showErr('Enter count ≥ 1 for '+packLabel(packs[0])+'.');return;}
+    packs[0].count=c0;
+    wants = packs.map((p,i)=> i===0 ? c0 : (parseInt(p.count)||0));
+  }
+
+  // Compact sequential fill (replaces the alloc% zone-split model).
+  const mode = (outputMode==='custom') ? 'custom' : 'auto';
+  let chosenAxis = splitAxis, autoReport = '', packed;
+  if(splitAxis === 'auto'){
+    const solved = tryAllAxesCompact(c, pkgObjs, mode, wants);
     chosenAxis = solved.best;
-    autoReport = ` (auto — tried L=${solved.results.L.total}, W=${solved.results.W.total}, H=${solved.results.H.total})`;
+    packed = solved.results[solved.best];
+    autoReport = ` (auto — L=${solved.results.L.totalCount}, W=${solved.results.W.totalCount}, H=${solved.results.H.totalCount})`;
+  } else {
+    packed = packCompact(c, chosenAxis, pkgObjs, mode, wants);
   }
-  const axisForCalc = (chosenAxis === 'auto') ? 'L' : chosenAxis;
-  const zones = computePackZones(c, axisForCalc, packs);
-  const zoneResults=[];
-  let totalCount=0, totalVol=0, totalWeight=0;
-  const pkgObjs=[];
-  for(let i=0;i<packs.length;i++){
-    let pkgObj;
-    if(i===0){
-      // Primary pack: use legacy getPkgDims() to honor orientation + gap(mm→cm).
-      const base=getPkgDims();
-      pkgObj={
-        type:packs[i].shape, footL:base.footL, footW:base.footW, stackH:base.stackH,
-        gap:base.gap, vol:getPkgVolume(),
-        weight:packs[i].weight||(parseFloat(document.getElementById('p_weight').value)||0),
-        color:packs[i].color
-      };
-    } else {
-      pkgObj=getPackDims(i);
-    }
-    pkgObjs.push(pkgObj);
-    if(!pkgObj||!pkgObj.footL||!pkgObj.stackH){ continue; }
-    const z=zones[i];
-    const grid=calcGrid(z,pkgObj);
-    zoneResults.push({ pack:packs[i], pkgObj, zone:z, grid });
-    totalCount+=grid.count;
-    totalVol+=grid.count*(pkgObj.vol||0);
-    totalWeight+=grid.count*(pkgObj.weight||0);
-  }
+  const { placements, totalCount, totalVol, totalWeight, totalRequested } = packed;
 
-  // Primary-pack size/fit checks (preserve legacy error UX for single-pack usage)
-  if(pkgObjs.length>0){
-    const p0=pkgObjs[0];
-    if(p0.footL<=0||p0.footW<=0||p0.stackH<=0){showErr('Package dimensions must be > 0.');return;}
-    if(p0.footL>c.l||p0.footW>c.w||p0.stackH>c.h){
-      const d=p0.footL>c.l?`L ${p0.footL}>${c.l}cm`:p0.footW>c.w?`W ${p0.footW}>${c.w}cm`:`H ${p0.stackH}>${c.h}cm`;
-      showErr('Package larger than container! ('+d+')');return;
-    }
-  }
-  if(zoneResults.length===0||totalCount===0){
+  if(placements.length===0 || totalCount===0){
     showErr('Package does not fit with these dimensions.');return;
   }
 
   saveState();
 
-  // Comparison table: only meaningful for single-pack flow (primary shape)
+  // Comparison table: only meaningful for single-pack flow (primary shape).
   if(packs.length===1){
     const p=getPkgDims();
     const pkgWeight=parseFloat(document.getElementById('p_weight').value)||0;
     buildComparisonTable(p, pkgWeight);
   }
 
-  // Custom-count mode: each pack carries its own target count. Pack 1 reads the
-  // global #pkg_count; packs 2+ read their per-card .pack-count (stored on pack.count).
-  // Each pack's target is checked against ITS zone capacity (grid.count) at render.
-  let modeOut=outputMode;
-  if(outputMode==='custom'){
-    const c0=parseInt(document.getElementById('pkg_count').value)||0;
-    if(c0<=0){showErr('Enter count ≥ 1 for Pack 1.');return;}
-    packs[0].count=c0;
-    for(const zr of zoneResults){
-      const want = (zr.pack===packs[0]) ? c0 : (parseInt(zr.pack.count)||0);
-      if(want>0) zr.inputCount=want;   // blank/0 on an extra pack = no check, show its max
-    }
-  }
-
-  renderResult({ mode:modeOut, container:c, zoneResults, totalCount, totalVol, totalWeight, chosenAxis, autoReport });
-  lastViz=[c, zoneResults];
+  renderResult({ mode, container:c, placements, totalCount, totalVol, totalWeight, totalRequested, chosenAxis, autoReport });
+  lastViz=[c, placements];
   draw3D(...lastViz);
   if(isMobile())switchMobileTab('3d');
   if(typeof isDemo !== 'undefined' && isDemo) demoBump();
@@ -1811,114 +1927,50 @@ function modeLabel(m){
 function renderResult(r){
   const rb=document.getElementById('rbar');
   if(!rb) return;
-  if(r && r.zoneResults){
-    const { mode, container, zoneResults } = r;
-    // Custom mode: clamp per-pack displayed count (and totals) to zr.inputCount
-    let dispTotalCount=0, dispTotalVol=0, dispTotalWeight=0;
-    const dispPerPack=[];
-    for(const zr of zoneResults){
-      const rawCount = zr.grid.count;
-      const cap = (zr.inputCount!==undefined) ? Math.min(zr.inputCount, rawCount) : rawCount;
-      const vol = cap * (zr.pkgObj.vol||0);
-      const wt  = cap * (zr.pkgObj.weight||0);
-      dispPerPack.push({ zr, cap });
-      dispTotalCount += cap;
-      dispTotalVol   += vol;
-      dispTotalWeight+= wt;
-    }
-    const containerVol = container.l*container.w*container.h;
-    const utilPct = containerVol>0 ? (dispTotalVol/containerVol*100) : 0;
-    const payloadKg = container.payload || 0;
-    const weightOK = payloadKg<=0 || dispTotalWeight<=payloadKg;
-    const utilBarColor = utilPct>=90?'#3fb950':utilPct>=60?'#f0883e':'#58a6ff';
-    const lines=[];
-    const axisLabel = r.chosenAxis ? r.chosenAxis : splitAxis;
-    lines.push(`Mode: ${modeLabel(mode)}  |  Split: ${axisLabel}${r.autoReport || ''}`);
-    let overloadPacks=0;
-    for(const dp of dispPerPack){
-      const p=dp.zr.pack, g=dp.zr.grid, z=dp.zr.zone;
-      const swatch=`<span style="display:inline-block;width:10px;height:10px;background:${p.color};margin-right:6px;vertical-align:middle;border-radius:2px"></span>`;
-      const grZone=`Grid ${g.perL}×${g.perW}×${g.perH} · Zone ${Math.round(z.l)}×${Math.round(z.w)}×${Math.round(z.h)} cm`;
-      if(dp.zr.inputCount!==undefined){
-        // Status Check: compare requested count vs this pack's zone capacity.
-        const want=dp.zr.inputCount, maxFit=g.count;
-        let status;
-        if(maxFit<=0){
-          overloadPacks++;
-          status=`<span style="color:#f85149">🚫 none fit — package too big for its alloc zone</span>`;
-        } else if(want>maxFit){
-          overloadPacks++;
-          status=`<span style="color:#f85149">🚫 overload — only ${fmtN(maxFit)} fit, excess ${fmtN(want-maxFit)} (need ${Math.ceil(want/maxFit)}×)</span>`;
-        } else if(want===maxFit){
-          status=`<span style="color:#3fb950">✅ exactly full</span>`;
-        } else {
-          status=`<span style="color:#f0883e">📦 fits — room for ${fmtN(maxFit-want)} more</span>`;
-        }
-        lines.push(`${swatch}Pack ${p.id} (${p.shape}): want <b>${fmtN(want)}</b> / max <b>${fmtN(maxFit)}</b> · ${status} · ${grZone}`);
+  const { mode, container, placements } = r;
+  if(!placements){ rb.innerHTML=''; return; }
+  const containerVol = container.l*container.w*container.h;
+  const utilPct = containerVol>0 ? (r.totalVol/containerVol*100) : 0;
+  const payloadKg = container.payload || 0;
+  const weightOK = payloadKg<=0 || r.totalWeight<=payloadKg;
+  const utilBarColor = utilPct>=90?'#3fb950':utilPct>=60?'#f0883e':'#58a6ff';
+  const lines=[];
+  const axisLabel = r.chosenAxis ? r.chosenAxis : splitAxis;
+  lines.push(`Mode: ${modeLabel(mode)}  |  Fill axis: ${axisLabel}${r.autoReport || ''}`);
+  for(const pl of placements){
+    const p=pl.pack, g=pl.grid, s=pl.slab;
+    const swatch=`<span style="display:inline-block;width:10px;height:10px;background:${p.color};margin-right:6px;vertical-align:middle;border-radius:2px"></span>`;
+    const grBlock=`Grid ${g.perL}×${g.perW}×${g.perH} · Block ${Math.round(s.l)}×${Math.round(s.w)}×${Math.round(s.h)} cm`;
+    if(mode==='custom'){
+      const want=pl.inputCount||0, placed=pl.placedCount, room=Math.max(0, pl.capInRemain-placed);
+      let status;
+      if(placed>=want && want>0){
+        status = room>0 ? `<span style="color:#f0883e">✅ all fit · ${fmtN(room)} more would still fit here</span>`
+                        : `<span style="color:#3fb950">✅ all fit (snug)</span>`;
       } else {
-        lines.push(`${swatch}Pack ${p.id} (${p.shape}): <b>${fmtN(dp.cap)}</b> units · ${grZone}`);
+        status = `<span style="color:#f85149">⚠ ${fmtN(placed)} placed of ${fmtN(want)} — short ${fmtN(want-placed)}</span>`;
       }
+      lines.push(`${swatch}${packLabel(p)} (${p.shape}): want <b>${fmtN(want)}</b> / placed <b>${fmtN(placed)}</b> · ${status} · ${grBlock}`);
+    } else {
+      lines.push(`${swatch}${packLabel(p)} (${p.shape}): <b>${fmtN(pl.placedCount)}</b> units · ${grBlock}`);
     }
-    const wtStr = dispTotalWeight>0
-      ? `${fmtN(dispTotalWeight)} kg ${weightOK?'<span style="color:#3fb950">✓</span>':'<span style="color:#f85149">⚠ over payload</span>'}`
-      : '—';
-    const bar = `<span style="display:inline-block;width:90px;height:8px;background:#21262d;border-radius:4px;vertical-align:middle;margin:0 4px;overflow:hidden"><span style="display:block;height:100%;width:${Math.min(utilPct,100).toFixed(1)}%;background:${utilBarColor}"></span></span>`;
-    const overloadNote = overloadPacks>0
-      ? `  ·  <span style="color:#f85149">⚠ ${overloadPacks} pack${overloadPacks>1?'s':''} overload — container cannot bear the requested count</span>`
-      : '';
-    lines.push(
-      `<b>Total loaded: ${fmtN(dispTotalCount)} packages</b>  ·  Vol util: <b>${utilPct.toFixed(1)}%</b>${bar}·  Weight: ${wtStr}${overloadNote}`
-    );
-    rb.innerHTML=lines.map(l=>`<div class="info-line">${l}</div>`).join('');
-    return;
   }
-  // ── Legacy path (unreachable post-Task-4 but retained as fallback) ──
-  const el=rb;
-  let h='';
-
-  const weightHtml=()=>{
-    if(!r.totalWeight) return '';
-    const over=r.payload&&r.totalWeight>r.payload;
-    const cls=over?'wt-over':'wt-ok';
-    const pct=r.payload?(r.totalWeight/r.payload*100).toFixed(1):null;
-    return `<div class="${cls} wt-warn">⚖ Total weight: <b>${fmtN(r.totalWeight)} kg</b>`+
-      (r.payload?` / ${fmtN(r.payload)} kg limit (${pct}%)`+
-        (over?` — <b>OVERWEIGHT by ${fmtN(r.totalWeight-r.payload)} kg</b>`:' ✓')
-      :'')+`</div>`;
-  };
-
-  if(r.mode==='auto') {
-    const vpct=r.volUtil.toFixed(1), bc=r.volUtil>=90?'#3fb950':r.volUtil>=60?'#f0883e':'#58a6ff';
-    h+=`<div class="stat-row">
-      <span class="badge bg-green">🎯 Max Capacity</span>
-      <div class="sb"><div class="v">${fmtN(r.maxCount)}</div><div class="l">Max packages</div></div>
-      <div class="sb"><div class="v">${vpct}%</div><div class="l">Vol util<div class="prog-w"><div class="prog-b" style="width:${Math.min(r.volUtil,100).toFixed(1)}%;background:${bc}"></div></div></div></div>
-      <div class="sb"><div class="v">${r.perL}×${r.perW}×${r.perH}</div><div class="l">Grid L×W×H</div></div>
-      <div class="sb"><div class="v" style="color:#f0883e">${fmtM3(r.totalEmptyVol)} m³</div><div class="l">Total unused</div></div>
-    </div>
-    <div class="info-line">
-      Edge strips — L: <b>${r.remL.toFixed(1)} cm</b>, W: <b>${r.remW.toFixed(1)} cm</b>, H: <b>${r.remH.toFixed(1)} cm</b> &nbsp;|&nbsp;
-      Edge leftover: <b>${fmtM3(r.edgeRemVol)} m³</b>`+
-      (pkgType==='cylinder'||pkgType==='sphere'?` &nbsp;|&nbsp; Internal gaps: <b>${fmtM3(r.internalGapVol)} m³</b>`:'')
-    +`</div>`
-    +weightHtml();
-  } else {
-    const bc=r.status==='overload'?'#f85149':r.status==='full'?'#3fb950':'#f0883e';
-    const bdg=r.status==='full'?'bg-green':r.status==='overload'?'bg-red':'bg-orange';
-    const bl=r.status==='full'?'✅ Exactly Full':r.status==='overload'?'🚫 Overload':'📦 Partial';
-    h+=`<div class="stat-row">
-      <span class="badge ${bdg}">${bl}</span>
-      <div class="sb"><div class="v">${fmtN(r.inputCount)}</div><div class="l">Input</div></div>
-      <div class="sb"><div class="v">${fmtN(r.maxCount)}</div><div class="l">Max capacity</div></div>`;
-    if(r.status==='overload') h+=`<div class="sb"><div class="v" style="color:#f85149">+${fmtN(r.inputCount-r.maxCount)}</div><div class="l">Excess (need ${Math.ceil(r.inputCount/r.maxCount)}×)</div></div>`;
-    if(r.status==='partial')  h+=`<div class="sb"><div class="v" style="color:#f0883e">${fmtN(r.maxCount-r.inputCount)}</div><div class="l">Can add</div></div>`;
-    h+=`<div class="sb"><div class="v">${r.fillPct.toFixed(1)}%</div><div class="l">Fill<div class="prog-w"><div class="prog-b" style="width:${r.fillPct.toFixed(1)}%;background:${bc}"></div></div></div></div>
-      <div class="sb"><div class="v" style="color:#f0883e">${fmtM3(r.totalEmptyVol)} m³</div><div class="l">Total unused</div></div>
-    </div>
-    <div class="info-line">Edge strips — L: <b>${r.remL.toFixed(1)} cm</b>, W: <b>${r.remW.toFixed(1)} cm</b>, H: <b>${r.remH.toFixed(1)} cm</b> &nbsp;|&nbsp; Edge leftover: <b>${fmtM3(r.edgeRemVol)} m³</b></div>`
-    +weightHtml();
+  const wtStr = r.totalWeight>0
+    ? `${fmtN(r.totalWeight)} kg ${weightOK?'<span style="color:#3fb950">✓</span>':'<span style="color:#f85149">⚠ over payload</span>'}`
+    : '—';
+  const bar = `<span style="display:inline-block;width:90px;height:8px;background:#21262d;border-radius:4px;vertical-align:middle;margin:0 4px;overflow:hidden"><span style="display:block;height:100%;width:${Math.min(utilPct,100).toFixed(1)}%;background:${utilBarColor}"></span></span>`;
+  // Set-level overload (custom): the WHOLE set, not any single pack's zone.
+  let setNote='';
+  if(mode==='custom'){
+    const shortBy = (r.totalRequested||0) - r.totalCount;
+    setNote = shortBy>0
+      ? `  ·  <span style="color:#f85149">⚠ Set overload — container holds ${fmtN(r.totalCount)} of ${fmtN(r.totalRequested)} requested (short ${fmtN(shortBy)})</span>`
+      : `  ·  <span style="color:#3fb950">✓ All ${fmtN(r.totalRequested)} requested fit</span>`;
   }
-  el.innerHTML=h;
+  lines.push(
+    `<b>Total loaded: ${fmtN(r.totalCount)} packages</b>  ·  Vol util: <b>${utilPct.toFixed(1)}%</b>${bar}·  Weight: ${wtStr}${setNote}`
+  );
+  rb.innerHTML=lines.map(l=>`<div class="info-line">${l}</div>`).join('');
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2198,7 +2250,10 @@ function drawPkg3d(ctx, type, wx, wy, wz, p, baseColor, sc, ox, oy, isPrimary){
   }
 }
 
-function draw3D(c, zoneResults){
+// View selector: choose how the packed result is rendered.
+function setViewMode(m){ viewMode=m; const s=document.getElementById('viewSel'); if(s)s.value=m; if(lastViz)draw3D(...lastViz); else drawEmpty3D(); saveState(); }
+
+function draw3D(c, placements){
   const canvas=document.getElementById('viz3d');
   const wrap=document.getElementById('canvasWrap');
   const W=wrap.offsetWidth||800,H=wrap.offsetHeight||500;
@@ -2206,21 +2261,54 @@ function draw3D(c, zoneResults){
   const ctx=canvas.getContext('2d');
   ctx.fillStyle='#0d1117';ctx.fillRect(0,0,W,H);
   const{sc,ox,oy}=computeFit(c.l,c.w,c.h,W,H);
-  const az=viewAz,cosAz=Math.cos(az),sinAz=Math.sin(az);
+  const az=viewAz;
   const MAX=isDemo?200:8000;
-  let drawnTotal=0, requestedTotal=0;
 
-  for(let zi=0; zi<zoneResults.length; zi++){
-    const zr=zoneResults[zi];
-    const { grid, pkgObj, zone, pack } = zr;
+  // Top-down 2D floor map is a flat projection — fully separate path.
+  if(viewMode==='top2d'){
+    const st=drawTop2D(ctx,c,placements,W,H,MAX);
+    drawDemoWatermark(ctx,W,H);
+    draw3DFooter(ctx,placements,az,W,H,st.drawn,st.requested,MAX);
+    draw3DLegend(placements);
+    return;
+  }
+
+  const st = (viewMode==='layered')
+    ? drawLayered3D(ctx,c,placements,sc,ox,oy,az,MAX)
+    : drawPacked3D(ctx,c,placements,sc,ox,oy,az,MAX, viewMode==='exploded');
+
+  // Unused-space hint (compact only — exploded/layered intentionally spread out).
+  if(viewMode==='compact' && placements.length>0){
+    const zr0 = placements[0];
+    drawRemSpace(ctx, zr0.grid.perL, zr0.grid.perW, zr0.grid.perH, c, zr0.pkgObj, sc, ox, oy, null);
+  }
+  drawWire(ctx,c.l,c.w,c.h,sc,ox,oy);
+  drawDoor(ctx,c.l,c.w,c.h,sc,ox,oy);
+  drawAxisArrows(ctx,c.l,c.w,c.h,sc,ox,oy);
+  drawDemoWatermark(ctx,W,H);
+  draw3DFooter(ctx,placements,az,W,H,st.drawn,st.requested,MAX);
+  draw3DLegend(placements);
+}
+
+// Compact (packer truth) + Exploded (slabs pushed apart along the fill axis).
+function drawPacked3D(ctx,c,placements,sc,ox,oy,az,MAX,exploded){
+  const cosAz=Math.cos(az),sinAz=Math.sin(az);
+  let drawnTotal=0,requestedTotal=0;
+  const axis = placements[0] ? placements[0].fillAxis : 'L';
+  const fullAxis = axis==='L'?c.l : axis==='W'?c.w : c.h;
+  const expStep = exploded ? fullAxis*0.14 : 0;
+  for(let zi=0; zi<placements.length; zi++){
+    const zr=placements[zi];
+    const { grid, pkgObj, slab, pack } = zr;
+    if(!pkgObj) continue;
     const color = pack.color || pkgObj.color || '#3fb950';
     const isPrimary = (zi===0);
     const gap = pkgObj.gap || 0;
-    const stepL = pkgObj.footL + gap;
-    const stepW = pkgObj.footW + gap;
-    const stepH = pkgObj.stackH + gap;
-    const drawLimit = (zr.inputCount!==undefined) ? zr.inputCount : grid.count;
+    const stepL=pkgObj.footL+gap, stepW=pkgObj.footW+gap, stepH=pkgObj.stackH+gap;
+    const drawLimit = (zr.placedCount!==undefined) ? zr.placedCount : grid.count;
     requestedTotal += drawLimit;
+    let eL=0,eW=0,eH=0;
+    if(axis==='L')eL=zi*expStep; else if(axis==='W')eW=zi*expStep; else eH=zi*expStep;
     const xR=cosAz>=0?mkR(0,grid.perL-1,1):mkR(grid.perL-1,0,-1);
     const yR=sinAz>=0?mkR(0,grid.perW-1,1):mkR(grid.perW-1,0,-1);
     const zR=mkR(0,grid.perH-1,1);
@@ -2229,47 +2317,109 @@ function draw3D(c, zoneResults){
     for(const iz of zR)for(const iy of yR)for(const ix of xR){
       if(placed>=drawLimit) break outer;
       if(drawnTotal>=MAX) break outer;
-      const wx=zone.offL + ix*stepL;
-      const wy=zone.offW + iy*stepW;
-      const wz=zone.offH + iz*stepH;
+      const wx=slab.offL+eL + ix*stepL;
+      const wy=slab.offW+eW + iy*stepW;
+      const wz=slab.offH+eH + iz*stepH;
       drawPkg3d(ctx, pkgObj.type, wx, wy, wz, pkgObj, color, sc, ox, oy, isPrimary);
       placed++; drawnTotal++;
     }
     if(drawnTotal>=MAX) break;
   }
+  return { drawn:drawnTotal, requested:requestedTotal };
+}
 
-  // Unused-space hint: use primary zone's grid for legacy shading
-  if(zoneResults.length>0){
-    const zr0 = zoneResults[0];
-    drawRemSpace(ctx, zr0.grid.perL, zr0.grid.perW, zr0.grid.perH, c, zr0.pkgObj, sc, ox, oy, null);
+// Layered: each pack type stacked as its own full-floor layer set (illustrative).
+function drawLayered3D(ctx,c,placements,sc,ox,oy,az,MAX){
+  const cosAz=Math.cos(az),sinAz=Math.sin(az);
+  let drawnTotal=0,requestedTotal=0,hCursor=0;
+  for(let zi=0; zi<placements.length; zi++){
+    const zr=placements[zi];
+    const { pkgObj, pack } = zr;
+    if(!pkgObj || !pkgObj.footL || !pkgObj.stackH) continue;
+    const color = pack.color || pkgObj.color || '#3fb950';
+    const isPrimary = (zi===0);
+    const gap = pkgObj.gap || 0;
+    const stepL=pkgObj.footL+gap, stepW=pkgObj.footW+gap, stepH=pkgObj.stackH+gap;
+    const drawLimit = (zr.placedCount!==undefined) ? zr.placedCount : zr.grid.count;
+    requestedTotal += drawLimit;
+    const perL=Math.max(1,Math.floor((c.l+gap)/stepL));
+    const perW=Math.max(1,Math.floor((c.w+gap)/stepW));
+    const floorCap=perL*perW;
+    const layers=Math.max(1,Math.ceil(drawLimit/floorCap));
+    const xR=cosAz>=0?mkR(0,perL-1,1):mkR(perL-1,0,-1);
+    const yR=sinAz>=0?mkR(0,perW-1,1):mkR(perW-1,0,-1);
+    const zR=mkR(0,layers-1,1);
+    let placed=0;
+    outer:
+    for(const iz of zR)for(const iy of yR)for(const ix of xR){
+      if(placed>=drawLimit) break outer;
+      if(drawnTotal>=MAX) break outer;
+      drawPkg3d(ctx, pkgObj.type, ix*stepL, iy*stepW, hCursor+iz*stepH, pkgObj, color, sc, ox, oy, isPrimary);
+      placed++; drawnTotal++;
+    }
+    hCursor += layers*stepH;
+    if(drawnTotal>=MAX) break;
   }
-  drawWire(ctx,c.l,c.w,c.h,sc,ox,oy);
-  drawDoor(ctx,c.l,c.w,c.h,sc,ox,oy);
-  drawAxisArrows(ctx,c.l,c.w,c.h,sc,ox,oy);
-  if(isDemo){
-    ctx.save();ctx.translate(W/2,H/2);ctx.rotate(-Math.PI/7);
-    ctx.font='bold 68px Segoe UI';ctx.textAlign='center';ctx.globalAlpha=0.10;
-    ctx.fillStyle='#f0883e';ctx.fillText('DEMO',0,0);
-    ctx.globalAlpha=0.06;ctx.fillText('DEMO',0,72);ctx.restore();
+  return { drawn:drawnTotal, requested:requestedTotal };
+}
+
+// Top-down 2D floor map: bottom-layer footprints, color-coded per pack.
+function drawTop2D(ctx,c,placements,W,H,MAX){
+  const margin=46;
+  const s=Math.min((W-2*margin)/c.l,(H-2*margin)/c.w);
+  const x0=(W-c.l*s)/2, y0=(H-c.w*s)/2;
+  let drawn=0, requested=0;
+  for(let zi=0; zi<placements.length; zi++){
+    const zr=placements[zi];
+    const { pkgObj, slab, grid } = zr;
+    if(!pkgObj || !pkgObj.footL) continue;
+    const gap=pkgObj.gap||0, stepL=pkgObj.footL+gap, stepW=pkgObj.footW+gap;
+    const perL=grid.perL||0, perW=grid.perW||0;
+    const bottom=Math.min(zr.placedCount!==undefined?zr.placedCount:grid.count, perL*perW);
+    requested += bottom;
+    let n=0;
+    ctx.fillStyle=zr.pack.color||'#3fb950'; ctx.globalAlpha=0.85;
+    for(let iy=0; iy<perW && n<bottom && drawn<MAX; iy++)
+      for(let ix=0; ix<perL && n<bottom && drawn<MAX; ix++){
+        const rx=x0+(slab.offL+ix*stepL)*s, ry=y0+(slab.offW+iy*stepW)*s;
+        ctx.fillRect(rx+0.5, ry+0.5, Math.max(1,pkgObj.footL*s-1), Math.max(1,pkgObj.footW*s-1));
+        n++; drawn++;
+      }
   }
+  ctx.globalAlpha=1;
+  ctx.strokeStyle='#58a6ff'; ctx.lineWidth=2; ctx.strokeRect(x0,y0,c.l*s,c.w*s);
+  ctx.fillStyle='#8b949e'; ctx.font='11px Segoe UI'; ctx.textAlign='center';
+  ctx.fillText(`Top-down floor map (bottom layer) — L ${Math.round(c.l)} × W ${Math.round(c.w)} cm`, W/2, Math.max(14,y0-12));
+  return { drawn, requested };
+}
+
+function drawDemoWatermark(ctx,W,H){
+  if(!isDemo) return;
+  ctx.save();ctx.translate(W/2,H/2);ctx.rotate(-Math.PI/7);
+  ctx.font='bold 68px Segoe UI';ctx.textAlign='center';ctx.globalAlpha=0.10;
+  ctx.fillStyle='#f0883e';ctx.fillText('DEMO',0,0);
+  ctx.globalAlpha=0.06;ctx.fillText('DEMO',0,72);ctx.restore();
+}
+
+function draw3DFooter(ctx,placements,az,W,H,drawnTotal,requestedTotal,MAX){
   ctx.fillStyle='#6e7681';ctx.font='10px Segoe UI';ctx.textAlign='left';
-  const firstGrid = zoneResults[0] ? zoneResults[0].grid : {perL:0,perW:0,perH:0};
-  ctx.fillText(`Grid ${firstGrid.perL}×${firstGrid.perW}×${firstGrid.perH} | Az ${Math.round(az*180/Math.PI)}° | Drag to rotate`,8,H-8);
+  const g0 = placements[0] ? placements[0].grid : {perL:0,perW:0,perH:0};
+  ctx.fillText(`View: ${viewMode} | Grid ${g0.perL}×${g0.perW}×${g0.perH} | Az ${Math.round(az*180/Math.PI)}° | Drag to rotate`,8,H-8);
   if(drawnTotal>=MAX){
     ctx.fillStyle='#f0883e';ctx.textAlign='center';
     ctx.fillText(`Large dataset — showing ${MAX.toLocaleString()} of ${requestedTotal.toLocaleString()} packages`,W/2,H-8);
   }
+}
 
-  // Legend: per-pack chips + overload/unused
+function draw3DLegend(placements){
   const leg=document.getElementById('legend3d');
-  if(leg){
-    leg.style.display='flex';
-    const packChips = zoneResults.map(zr =>
-      `<div class="leg-item"><div class="leg-dot" style="background:${zr.pack.color}"></div>Pack ${zr.pack.id} (${zr.pack.shape}): ${fmtN(zr.grid.count)}</div>`
-    ).join('');
-    leg.innerHTML = packChips +
-      `<div class="leg-item"><div class="leg-dot" style="background:rgba(56,139,253,0.3);border:1px solid #388bfd"></div>Unused space</div>`;
-  }
+  if(!leg) return;
+  leg.style.display='flex';
+  const packChips = placements.map(zr =>
+    `<div class="leg-item"><div class="leg-dot" style="background:${zr.pack.color}"></div>${packLabel(zr.pack)} (${zr.pack.shape}): ${fmtN(zr.placedCount!==undefined?zr.placedCount:zr.grid.count)}</div>`
+  ).join('');
+  leg.innerHTML = packChips +
+    `<div class="leg-item"><div class="leg-dot" style="background:rgba(56,139,253,0.3);border:1px solid #388bfd"></div>Unused space</div>`;
 }
 function drawEmpty3D(){
   const canvas=document.getElementById('viz3d');
@@ -2662,7 +2812,19 @@ function applySuggestion(...args){
 // BOOT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 setupAdminAccess();
-checkStoredLicense();
+(function(){
+  const cfg = parseShareHash();
+  if(cfg){
+    // A shared link is present: licensed visitors get it editable; everyone
+    // else gets a read-only view that bypasses the lock screen.
+    Promise.resolve(checkStoredLicense()).then(unlocked=>{
+      if(unlocked){ try{ applyShareConfig(cfg); }catch(e){} }
+      else { try{ enterReadOnlyShare(cfg); }catch(e){} }
+    }).catch(()=>{ try{ enterReadOnlyShare(cfg); }catch(e){} });
+  } else {
+    checkStoredLicense();   // normal license gate — unchanged
+  }
+})();
 </script>
 </body>
 </html>
