@@ -177,6 +177,12 @@ select:focus,input:focus{border-color:#58a6ff}
 .el-wrap{display:flex;align-items:center;gap:5px;font-size:0.7rem;color:#6e7681}
 .view-wrap{display:flex;align-items:center;gap:5px;font-size:0.7rem;color:#6e7681}
 .view-wrap select{background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:0.72rem;padding:2px 5px;cursor:pointer}
+.cfg-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.cfg-bar select{flex:1;min-width:120px;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:4px 7px;border-radius:5px;font-size:0.78rem}
+.cfg-btn{padding:4px 9px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;cursor:pointer;font-size:0.75rem;transition:all .15s}
+.cfg-btn:hover{border-color:#58a6ff;color:#58a6ff}
+.cfg-btn.cfg-save{border-color:#238636;color:#3fb950}
+.cfg-btn.cfg-save:hover{background:rgba(63,185,80,.12)}
 input[type=range]{width:65px;accent-color:#58a6ff}
 .canvas-wrap{flex:1;position:relative;min-height:200px;overflow:hidden}
 #viz3d{display:block;width:100%;height:100%;cursor:grab;border-radius:7px;border:1px solid #30363d}
@@ -366,6 +372,17 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 
 <!-- ═══ LEFT ═══ -->
 <div class="left">
+
+  <!-- Saved configs -->
+  <div class="card" id="cfgCard">
+    <div class="sec">💾 Saved Configs</div>
+    <div class="cfg-bar">
+      <select id="cfgSlots" title="Your saved configurations"><option value="">— saved configs —</option></select>
+      <button class="cfg-btn" onclick="loadNamedConfig()" title="Load the selected config">📂 Load</button>
+      <button class="cfg-btn" onclick="deleteNamedConfig()" title="Delete the selected config">🗑</button>
+      <button class="cfg-btn cfg-save" onclick="saveNamedConfig()" title="Save the current container + all packs as a named config">💾 Save current</button>
+    </div>
+  </div>
 
   <!-- Container -->
   <div class="card">
@@ -1270,12 +1287,12 @@ function wirePackCard(idx){
     inp.addEventListener('blur', commit);
   });
   card.querySelectorAll('.pack-dim').forEach(inp => {
-    inp.addEventListener('input', e => { packs[idx].dims[e.target.dataset.key] = +e.target.value; });
+    inp.addEventListener('input', e => { packs[idx].dims[e.target.dataset.key] = +e.target.value; saveState(); });
   });
-  card.querySelector('.pack-gap').addEventListener('input', e => { packs[idx].gap = +e.target.value; });
-  card.querySelector('.pack-weight').addEventListener('input', e => { packs[idx].weight = +e.target.value; });
+  card.querySelector('.pack-gap').addEventListener('input', e => { packs[idx].gap = +e.target.value; saveState(); });
+  card.querySelector('.pack-weight').addEventListener('input', e => { packs[idx].weight = +e.target.value; saveState(); });
   const cnt = card.querySelector('.pack-count');
-  if(cnt) cnt.addEventListener('input', e => { packs[idx].count = parseInt(e.target.value)||0; });
+  if(cnt) cnt.addEventListener('input', e => { packs[idx].count = parseInt(e.target.value)||0; saveState(); });
 }
 
 function addPack(){
@@ -1469,6 +1486,48 @@ function lockDownReadOnly(){
   }
 }
 
+// ───────── Named save/load configs (manual slots, separate from auto-restore) ─────────
+const LS_CONFIGS='cpc_saved_configs';
+function getSavedConfigs(){ try{ return JSON.parse(localStorage.getItem(LS_CONFIGS)||'{}')||{}; }catch(e){ return {}; } }
+function setSavedConfigs(o){ try{ localStorage.setItem(LS_CONFIGS, JSON.stringify(o)); }catch(e){ alert('Could not save (storage full?).'); } }
+function refreshConfigSlots(sel){
+  const el=document.getElementById('cfgSlots'); if(!el) return;
+  const o=getSavedConfigs();
+  const names=Object.keys(o).sort((a,b)=>a.localeCompare(b));
+  const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  el.innerHTML=`<option value="">— saved configs (${names.length}) —</option>`+
+    names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  if(sel!==undefined) el.value=sel;
+}
+function saveNamedConfig(){
+  const cur=(document.getElementById('cfgSlots')||{}).value||'';
+  const name=(window.prompt('Save current setup as (name):', cur)||'').trim();
+  if(!name) return;
+  const o=getSavedConfigs();
+  if(o[name] && !window.confirm(`Overwrite existing config "${name}"?`)) return;
+  o[name]=buildSavePayload();
+  setSavedConfigs(o);
+  refreshConfigSlots(name);
+  shareToast(`💾 Saved "${name}" — container + ${packs.length} pack(s). Load it anytime from the Saved Configs box.`);
+}
+function loadNamedConfig(){
+  const el=document.getElementById('cfgSlots'); const name=el?el.value:'';
+  if(!name){ shareToast('Pick a saved config from the list first.'); return; }
+  const cfg=getSavedConfigs()[name];
+  if(!cfg){ shareToast(`Config "${name}" not found.`); return; }
+  applyShareConfig(cfg);          // applies container + all packs, then recalculates
+  refreshConfigSlots(name);
+  shareToast(`📂 Loaded "${name}".`);
+}
+function deleteNamedConfig(){
+  const el=document.getElementById('cfgSlots'); const name=el?el.value:'';
+  if(!name){ shareToast('Pick a saved config to delete.'); return; }
+  if(!window.confirm(`Delete saved config "${name}"?`)) return;
+  const o=getSavedConfigs(); delete o[name]; setSavedConfigs(o);
+  refreshConfigSlots('');
+  shareToast(`🗑 Deleted "${name}".`);
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // INIT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1498,6 +1557,7 @@ function init() {
   seedPack0FromLegacy();
   applyLoadedPacksCfg();
   renderPacksPanel();
+  refreshConfigSlots();
   updateDemoCounterUI();
   document.querySelectorAll('input[name=splitAxis]').forEach(r => {
     r.addEventListener('change', e => { splitAxis = e.target.value; });
