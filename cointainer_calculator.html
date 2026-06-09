@@ -175,6 +175,8 @@ select:focus,input:focus{border-color:#58a6ff}
 .rot-btn.active{border-color:#388bfd;color:#388bfd;background:rgba(56,139,253,.1)}
 #viewLbl{font-size:0.7rem;color:#6e7681;min-width:62px;text-align:center}
 .el-wrap{display:flex;align-items:center;gap:5px;font-size:0.7rem;color:#6e7681}
+.view-wrap{display:flex;align-items:center;gap:5px;font-size:0.7rem;color:#6e7681}
+.view-wrap select{background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:0.72rem;padding:2px 5px;cursor:pointer}
 input[type=range]{width:65px;accent-color:#58a6ff}
 .canvas-wrap{flex:1;position:relative;min-height:200px;overflow:hidden}
 #viz3d{display:block;width:100%;height:100%;cursor:grab;border-radius:7px;border:1px solid #30363d}
@@ -582,6 +584,15 @@ input[type=range]{width:65px;accent-color:#58a6ff}
         <button class="rot-btn" id="vSE" onclick="setPreset(315)">SE</button>
         <span style="color:#484f58">|</span>
         <div class="el-wrap">Elev<input type="range" id="elevSlider" min="15" max="60" value="30" oninput="onElevChange()"></div>
+        <span style="color:#484f58">|</span>
+        <label class="view-wrap">View
+          <select id="viewSel" onchange="setViewMode(this.value)">
+            <option value="compact">Compact</option>
+            <option value="layered">Layered</option>
+            <option value="top2d">Top-down 2D</option>
+            <option value="exploded">Exploded</option>
+          </select>
+        </label>
         <span style="color:#484f58">|</span>
         <button id="btn3dFull" class="btn-fullscreen" onclick="toggle3dFullscreen()" title="Fullscreen 3D (Esc to exit)">⛶ Fullscreen</button>
       </div>
@@ -2140,7 +2151,10 @@ function drawPkg3d(ctx, type, wx, wy, wz, p, baseColor, sc, ox, oy, isPrimary){
   }
 }
 
-function draw3D(c, zoneResults){
+// View selector: choose how the packed result is rendered.
+function setViewMode(m){ viewMode=m; const s=document.getElementById('viewSel'); if(s)s.value=m; if(lastViz)draw3D(...lastViz); else drawEmpty3D(); saveState(); }
+
+function draw3D(c, placements){
   const canvas=document.getElementById('viz3d');
   const wrap=document.getElementById('canvasWrap');
   const W=wrap.offsetWidth||800,H=wrap.offsetHeight||500;
@@ -2148,21 +2162,54 @@ function draw3D(c, zoneResults){
   const ctx=canvas.getContext('2d');
   ctx.fillStyle='#0d1117';ctx.fillRect(0,0,W,H);
   const{sc,ox,oy}=computeFit(c.l,c.w,c.h,W,H);
-  const az=viewAz,cosAz=Math.cos(az),sinAz=Math.sin(az);
+  const az=viewAz;
   const MAX=isDemo?200:8000;
-  let drawnTotal=0, requestedTotal=0;
 
-  for(let zi=0; zi<zoneResults.length; zi++){
-    const zr=zoneResults[zi];
-    const { grid, pkgObj, zone, pack } = zr;
+  // Top-down 2D floor map is a flat projection — fully separate path.
+  if(viewMode==='top2d'){
+    const st=drawTop2D(ctx,c,placements,W,H,MAX);
+    drawDemoWatermark(ctx,W,H);
+    draw3DFooter(ctx,placements,az,W,H,st.drawn,st.requested,MAX);
+    draw3DLegend(placements);
+    return;
+  }
+
+  const st = (viewMode==='layered')
+    ? drawLayered3D(ctx,c,placements,sc,ox,oy,az,MAX)
+    : drawPacked3D(ctx,c,placements,sc,ox,oy,az,MAX, viewMode==='exploded');
+
+  // Unused-space hint (compact only — exploded/layered intentionally spread out).
+  if(viewMode==='compact' && placements.length>0){
+    const zr0 = placements[0];
+    drawRemSpace(ctx, zr0.grid.perL, zr0.grid.perW, zr0.grid.perH, c, zr0.pkgObj, sc, ox, oy, null);
+  }
+  drawWire(ctx,c.l,c.w,c.h,sc,ox,oy);
+  drawDoor(ctx,c.l,c.w,c.h,sc,ox,oy);
+  drawAxisArrows(ctx,c.l,c.w,c.h,sc,ox,oy);
+  drawDemoWatermark(ctx,W,H);
+  draw3DFooter(ctx,placements,az,W,H,st.drawn,st.requested,MAX);
+  draw3DLegend(placements);
+}
+
+// Compact (packer truth) + Exploded (slabs pushed apart along the fill axis).
+function drawPacked3D(ctx,c,placements,sc,ox,oy,az,MAX,exploded){
+  const cosAz=Math.cos(az),sinAz=Math.sin(az);
+  let drawnTotal=0,requestedTotal=0;
+  const axis = placements[0] ? placements[0].fillAxis : 'L';
+  const fullAxis = axis==='L'?c.l : axis==='W'?c.w : c.h;
+  const expStep = exploded ? fullAxis*0.14 : 0;
+  for(let zi=0; zi<placements.length; zi++){
+    const zr=placements[zi];
+    const { grid, pkgObj, slab, pack } = zr;
+    if(!pkgObj) continue;
     const color = pack.color || pkgObj.color || '#3fb950';
     const isPrimary = (zi===0);
     const gap = pkgObj.gap || 0;
-    const stepL = pkgObj.footL + gap;
-    const stepW = pkgObj.footW + gap;
-    const stepH = pkgObj.stackH + gap;
+    const stepL=pkgObj.footL+gap, stepW=pkgObj.footW+gap, stepH=pkgObj.stackH+gap;
     const drawLimit = (zr.placedCount!==undefined) ? zr.placedCount : grid.count;
     requestedTotal += drawLimit;
+    let eL=0,eW=0,eH=0;
+    if(axis==='L')eL=zi*expStep; else if(axis==='W')eW=zi*expStep; else eH=zi*expStep;
     const xR=cosAz>=0?mkR(0,grid.perL-1,1):mkR(grid.perL-1,0,-1);
     const yR=sinAz>=0?mkR(0,grid.perW-1,1):mkR(grid.perW-1,0,-1);
     const zR=mkR(0,grid.perH-1,1);
@@ -2171,47 +2218,109 @@ function draw3D(c, zoneResults){
     for(const iz of zR)for(const iy of yR)for(const ix of xR){
       if(placed>=drawLimit) break outer;
       if(drawnTotal>=MAX) break outer;
-      const wx=zone.offL + ix*stepL;
-      const wy=zone.offW + iy*stepW;
-      const wz=zone.offH + iz*stepH;
+      const wx=slab.offL+eL + ix*stepL;
+      const wy=slab.offW+eW + iy*stepW;
+      const wz=slab.offH+eH + iz*stepH;
       drawPkg3d(ctx, pkgObj.type, wx, wy, wz, pkgObj, color, sc, ox, oy, isPrimary);
       placed++; drawnTotal++;
     }
     if(drawnTotal>=MAX) break;
   }
+  return { drawn:drawnTotal, requested:requestedTotal };
+}
 
-  // Unused-space hint: use primary zone's grid for legacy shading
-  if(zoneResults.length>0){
-    const zr0 = zoneResults[0];
-    drawRemSpace(ctx, zr0.grid.perL, zr0.grid.perW, zr0.grid.perH, c, zr0.pkgObj, sc, ox, oy, null);
+// Layered: each pack type stacked as its own full-floor layer set (illustrative).
+function drawLayered3D(ctx,c,placements,sc,ox,oy,az,MAX){
+  const cosAz=Math.cos(az),sinAz=Math.sin(az);
+  let drawnTotal=0,requestedTotal=0,hCursor=0;
+  for(let zi=0; zi<placements.length; zi++){
+    const zr=placements[zi];
+    const { pkgObj, pack } = zr;
+    if(!pkgObj || !pkgObj.footL || !pkgObj.stackH) continue;
+    const color = pack.color || pkgObj.color || '#3fb950';
+    const isPrimary = (zi===0);
+    const gap = pkgObj.gap || 0;
+    const stepL=pkgObj.footL+gap, stepW=pkgObj.footW+gap, stepH=pkgObj.stackH+gap;
+    const drawLimit = (zr.placedCount!==undefined) ? zr.placedCount : zr.grid.count;
+    requestedTotal += drawLimit;
+    const perL=Math.max(1,Math.floor((c.l+gap)/stepL));
+    const perW=Math.max(1,Math.floor((c.w+gap)/stepW));
+    const floorCap=perL*perW;
+    const layers=Math.max(1,Math.ceil(drawLimit/floorCap));
+    const xR=cosAz>=0?mkR(0,perL-1,1):mkR(perL-1,0,-1);
+    const yR=sinAz>=0?mkR(0,perW-1,1):mkR(perW-1,0,-1);
+    const zR=mkR(0,layers-1,1);
+    let placed=0;
+    outer:
+    for(const iz of zR)for(const iy of yR)for(const ix of xR){
+      if(placed>=drawLimit) break outer;
+      if(drawnTotal>=MAX) break outer;
+      drawPkg3d(ctx, pkgObj.type, ix*stepL, iy*stepW, hCursor+iz*stepH, pkgObj, color, sc, ox, oy, isPrimary);
+      placed++; drawnTotal++;
+    }
+    hCursor += layers*stepH;
+    if(drawnTotal>=MAX) break;
   }
-  drawWire(ctx,c.l,c.w,c.h,sc,ox,oy);
-  drawDoor(ctx,c.l,c.w,c.h,sc,ox,oy);
-  drawAxisArrows(ctx,c.l,c.w,c.h,sc,ox,oy);
-  if(isDemo){
-    ctx.save();ctx.translate(W/2,H/2);ctx.rotate(-Math.PI/7);
-    ctx.font='bold 68px Segoe UI';ctx.textAlign='center';ctx.globalAlpha=0.10;
-    ctx.fillStyle='#f0883e';ctx.fillText('DEMO',0,0);
-    ctx.globalAlpha=0.06;ctx.fillText('DEMO',0,72);ctx.restore();
+  return { drawn:drawnTotal, requested:requestedTotal };
+}
+
+// Top-down 2D floor map: bottom-layer footprints, color-coded per pack.
+function drawTop2D(ctx,c,placements,W,H,MAX){
+  const margin=46;
+  const s=Math.min((W-2*margin)/c.l,(H-2*margin)/c.w);
+  const x0=(W-c.l*s)/2, y0=(H-c.w*s)/2;
+  let drawn=0, requested=0;
+  for(let zi=0; zi<placements.length; zi++){
+    const zr=placements[zi];
+    const { pkgObj, slab, grid } = zr;
+    if(!pkgObj || !pkgObj.footL) continue;
+    const gap=pkgObj.gap||0, stepL=pkgObj.footL+gap, stepW=pkgObj.footW+gap;
+    const perL=grid.perL||0, perW=grid.perW||0;
+    const bottom=Math.min(zr.placedCount!==undefined?zr.placedCount:grid.count, perL*perW);
+    requested += bottom;
+    let n=0;
+    ctx.fillStyle=zr.pack.color||'#3fb950'; ctx.globalAlpha=0.85;
+    for(let iy=0; iy<perW && n<bottom && drawn<MAX; iy++)
+      for(let ix=0; ix<perL && n<bottom && drawn<MAX; ix++){
+        const rx=x0+(slab.offL+ix*stepL)*s, ry=y0+(slab.offW+iy*stepW)*s;
+        ctx.fillRect(rx+0.5, ry+0.5, Math.max(1,pkgObj.footL*s-1), Math.max(1,pkgObj.footW*s-1));
+        n++; drawn++;
+      }
   }
+  ctx.globalAlpha=1;
+  ctx.strokeStyle='#58a6ff'; ctx.lineWidth=2; ctx.strokeRect(x0,y0,c.l*s,c.w*s);
+  ctx.fillStyle='#8b949e'; ctx.font='11px Segoe UI'; ctx.textAlign='center';
+  ctx.fillText(`Top-down floor map (bottom layer) — L ${Math.round(c.l)} × W ${Math.round(c.w)} cm`, W/2, Math.max(14,y0-12));
+  return { drawn, requested };
+}
+
+function drawDemoWatermark(ctx,W,H){
+  if(!isDemo) return;
+  ctx.save();ctx.translate(W/2,H/2);ctx.rotate(-Math.PI/7);
+  ctx.font='bold 68px Segoe UI';ctx.textAlign='center';ctx.globalAlpha=0.10;
+  ctx.fillStyle='#f0883e';ctx.fillText('DEMO',0,0);
+  ctx.globalAlpha=0.06;ctx.fillText('DEMO',0,72);ctx.restore();
+}
+
+function draw3DFooter(ctx,placements,az,W,H,drawnTotal,requestedTotal,MAX){
   ctx.fillStyle='#6e7681';ctx.font='10px Segoe UI';ctx.textAlign='left';
-  const firstGrid = zoneResults[0] ? zoneResults[0].grid : {perL:0,perW:0,perH:0};
-  ctx.fillText(`Grid ${firstGrid.perL}×${firstGrid.perW}×${firstGrid.perH} | Az ${Math.round(az*180/Math.PI)}° | Drag to rotate`,8,H-8);
+  const g0 = placements[0] ? placements[0].grid : {perL:0,perW:0,perH:0};
+  ctx.fillText(`View: ${viewMode} | Grid ${g0.perL}×${g0.perW}×${g0.perH} | Az ${Math.round(az*180/Math.PI)}° | Drag to rotate`,8,H-8);
   if(drawnTotal>=MAX){
     ctx.fillStyle='#f0883e';ctx.textAlign='center';
     ctx.fillText(`Large dataset — showing ${MAX.toLocaleString()} of ${requestedTotal.toLocaleString()} packages`,W/2,H-8);
   }
+}
 
-  // Legend: per-pack chips + overload/unused
+function draw3DLegend(placements){
   const leg=document.getElementById('legend3d');
-  if(leg){
-    leg.style.display='flex';
-    const packChips = zoneResults.map(zr =>
-      `<div class="leg-item"><div class="leg-dot" style="background:${zr.pack.color}"></div>${packLabel(zr.pack)} (${zr.pack.shape}): ${fmtN(zr.placedCount!==undefined?zr.placedCount:zr.grid.count)}</div>`
-    ).join('');
-    leg.innerHTML = packChips +
-      `<div class="leg-item"><div class="leg-dot" style="background:rgba(56,139,253,0.3);border:1px solid #388bfd"></div>Unused space</div>`;
-  }
+  if(!leg) return;
+  leg.style.display='flex';
+  const packChips = placements.map(zr =>
+    `<div class="leg-item"><div class="leg-dot" style="background:${zr.pack.color}"></div>${packLabel(zr.pack)} (${zr.pack.shape}): ${fmtN(zr.placedCount!==undefined?zr.placedCount:zr.grid.count)}</div>`
+  ).join('');
+  leg.innerHTML = packChips +
+    `<div class="leg-item"><div class="leg-dot" style="background:rgba(56,139,253,0.3);border:1px solid #388bfd"></div>Unused space</div>`;
 }
 function drawEmpty3D(){
   const canvas=document.getElementById('viz3d');
