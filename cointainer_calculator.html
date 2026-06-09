@@ -479,6 +479,7 @@ input[type=range]{width:65px;accent-color:#58a6ff}
         <div class="fg"><label>Gap between packages (mm)</label><input type="number" id="p_gap" step="1" min="0" value="0" placeholder="0"></div>
         <div class="fg"><label>Weight per package (kg)</label><input type="number" id="p_weight" step="0.1" min="0" value="" placeholder="optional"></div>
       </div>
+      <div class="fg" id="mainCountWrap" style="display:none"><label>Number of Packages (this pack)</label><input type="number" id="pkg_count" min="1" step="1" value="100"></div>
     </div>
   </div>
 
@@ -529,7 +530,7 @@ input[type=range]{width:65px;accent-color:#58a6ff}
       </button>
     </div>
     <div id="custom_wrap" style="display:none">
-      <div class="fg"><label>Number of Packages</label><input type="number" id="pkg_count" min="1" step="1" value="100"></div>
+      <div class="info-line" style="font-size:0.72rem;color:#8b949e">📦 Enter each pack's <b>Number of Packages</b> on its card (Pack 1 is in the Package Shape box above).</div>
     </div>
     <div id="suggest_wrap" style="display:none">
       <div class="suggest-panel" id="suggestPanel">
@@ -1687,6 +1688,7 @@ function setOrientation(o){orientation=o;['z','x','y'].forEach(x=>document.getEl
 function setMode(m){
   if(isDemo&&m==='suggest'){alert('💡 Suggest Size is a full-version feature.\nContact hovanphapbk@gmail.com for a license.');return;}
   outputMode=m;['auto','custom','suggest'].forEach(x=>document.getElementById('mode_'+x).classList.toggle('ao',x===m));document.getElementById('custom_wrap').style.display=m==='custom'?'block':'none';document.getElementById('suggest_wrap').style.display=m==='suggest'?'block':'none';
+  const mcw=document.getElementById('mainCountWrap'); if(mcw)mcw.style.display=m==='custom'?'block':'none';
   if(m !== 'auto' && splitAxis === 'auto'){
     splitAxis = 'L';
     const r = document.querySelector('input[name=splitAxis][value=L]');
