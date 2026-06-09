@@ -200,6 +200,8 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 .split-axis label { display:flex; align-items:center; gap:4px; cursor:pointer; }
 .pack-card { border:1px solid #30363d; border-left:4px solid var(--pack-color,#3fb950); border-radius:4px; padding:10px; margin-bottom:10px; background:#161b22; }
 .pack-card-hdr { display:flex; justify-content:space-between; align-items:center; font-weight:600; margin-bottom:6px; color:#c9d1d9; }
+.pack-name { cursor:text; border-bottom:1px dotted #484f58; }
+.pack-name:hover { border-bottom-color:#58a6ff; }
 .pack-color-swatch { display:inline-block; width:12px; height:12px; border-radius:2px; margin-right:6px; vertical-align:middle; }
 .pack-card label { display:flex; align-items:center; gap:6px; margin:4px 0; font-size:13px; color:#c9d1d9; }
 .pack-card label > input[type=number], .pack-card label > select { flex:1; }
@@ -1027,7 +1029,7 @@ function applyDemoRestrictions(){
     }
   } else {
     const addBtn=document.getElementById('btnAddPack');
-    if(addBtn) addBtn.disabled=(packs.length>=3);
+    if(addBtn) addBtn.disabled=(packs.length>=maxPacks());
     document.querySelectorAll('.btn-remove').forEach(b => b.style.display='');
   }
   updateDemoCounterUI();
@@ -1118,13 +1120,20 @@ const PRESETS = {
 let pkgType='cylinder', orientation='z', outputMode='auto';
 let viewAz=Math.PI/4, viewEl=Math.PI/6, lastViz=null;
 let cmpVisible=true;
+let viewMode='compact'; // 'compact' | 'layered' | 'top2d' | 'exploded'
 
 // Array-based pack state
 let packs = [
-  { id: 1, shape: 'cylinder', dims: {}, gap: 0, weight: 0, allocPct: 100, color: '#3fb950' }
+  { id: 1, name: '', shape: 'cylinder', dims: {}, gap: 0, weight: 0, count: 0, color: '#3fb950' }
 ];
-let splitAxis = 'L'; // 'L' | 'W' | 'H' | 'auto'
-const PACK_COLORS = ['#3fb950', '#4ecca3', '#f0883e'];
+let splitAxis = 'L'; // fill axis: 'L' | 'W' | 'H' | 'auto'
+const PACK_COLORS = ['#3fb950','#4ecca3','#f0883e','#58a6ff','#bc8cff','#f778ba','#ffa657','#7ee787',
+  '#ff7b72','#79c0ff','#d2a8ff','#ffdf5d','#56d364','#e3b341','#db61a2','#a5d6ff','#ffab70','#85e89d',
+  '#b392f0','#f97583'];
+function packColor(i){ return PACK_COLORS[i % PACK_COLORS.length]; }
+// packLabel: custom name or fallback "Pack N"
+function packLabel(p){ return (p && p.name && p.name.trim()) ? p.name.trim() : ('Pack ' + (p ? p.id : '?')); }
+function maxPacks(){ return outputMode==='custom' ? 20 : 10; }
 
 function readDimsForShape(shape, suffix){
   const g = (id) => +(document.getElementById('p'+suffix+'_'+id)?.value || 0);
@@ -1174,7 +1183,7 @@ function renderPacksPanel(){
   updateAllocSum();
   extras.forEach((_, i) => wirePackCard(i + 1));
   const btn = document.getElementById('btnAddPack');
-  if(btn) btn.disabled = packs.length >= 3;
+  if(btn) btn.disabled = packs.length >= maxPacks();
   const autoLbl = document.getElementById('autoAxisLabel');
   if(autoLbl) autoLbl.style.display = (typeof outputMode !== 'undefined' && outputMode === 'auto') ? '' : 'none';
   if(typeof isDemo !== 'undefined' && isDemo){
@@ -1190,7 +1199,7 @@ function packCardHTML(p, idx){
   return (
     `<div class="pack-card" style="--pack-color:${p.color}" data-pack-idx="${idx}">
       <div class="pack-card-hdr">
-        <span><span class="pack-color-swatch" style="background:${p.color}"></span>Pack ${p.id}</span>
+        <span><span class="pack-color-swatch" style="background:${p.color}"></span><span class="pack-name" title="Double-click to rename">${packLabel(p)}</span></span>
         ${removeBtn}
       </div>
       <label>Shape:
@@ -1202,6 +1211,7 @@ function packCardHTML(p, idx){
       <div class="pack-dims">${packDimsInputsHTML(p)}</div>
       <label>Gap (cm): <input type="number" class="pack-gap" value="${p.gap||0}" min="0" step="1"></label>
       <label>Weight (kg): <input type="number" class="pack-weight" value="${p.weight||0}" min="0" step="0.1"></label>
+      ${outputMode==='custom' ? `<label>Number of Packages: <input type="number" class="pack-count" value="${p.count||''}" min="1" step="1" placeholder="qty to check"></label>` : ''}
       <div class="alloc-row">
         <label>Alloc:</label>
         <input type="range" class="pack-alloc" min="0" max="100" step="1" value="${p.allocPct}">
@@ -1235,14 +1245,32 @@ function wirePackCard(idx){
   if(!card) return;
   card.querySelector('.pack-shape').addEventListener('change', e => {
     packs[idx].shape = e.target.value;
-    packs[idx].dims = {};
+    // Keep dims: shared keys (l/w/h, d/h, s/h, d) survive shape switches;
+    // packDimsInputsHTML only reads the keys relevant to the new shape.
     renderPacksPanel();
+  });
+  const nameEl = card.querySelector('.pack-name');
+  if(nameEl) nameEl.addEventListener('dblclick', () => {
+    const inp = document.createElement('input');
+    inp.type='text'; inp.value = packs[idx].name || ''; inp.className='pack-name-edit';
+    inp.placeholder = 'Pack '+packs[idx].id;
+    inp.style.cssText = 'width:100px;font:inherit;padding:1px 3px';
+    nameEl.replaceWith(inp); inp.focus(); inp.select();
+    let done=false;
+    const commit = () => { if(done) return; done=true; packs[idx].name = inp.value.trim(); saveState(); renderPacksPanel(); };
+    inp.addEventListener('keydown', e => {
+      if(e.key==='Enter'){ commit(); }
+      else if(e.key==='Escape'){ done=true; renderPacksPanel(); }
+    });
+    inp.addEventListener('blur', commit);
   });
   card.querySelectorAll('.pack-dim').forEach(inp => {
     inp.addEventListener('input', e => { packs[idx].dims[e.target.dataset.key] = +e.target.value; });
   });
   card.querySelector('.pack-gap').addEventListener('input', e => { packs[idx].gap = +e.target.value; });
   card.querySelector('.pack-weight').addEventListener('input', e => { packs[idx].weight = +e.target.value; });
+  const cnt = card.querySelector('.pack-count');
+  if(cnt) cnt.addEventListener('input', e => { packs[idx].count = parseInt(e.target.value)||0; });
   const alloc = card.querySelector('.pack-alloc');
   const allocVal = card.querySelector('.pack-alloc-val');
   alloc.addEventListener('input', e => {
@@ -1261,17 +1289,19 @@ function updateAllocSum(){
 }
 
 function addPack(){
-  if(packs.length >= 3) return;
+  if(packs.length >= maxPacks()) return;
   const last = packs[packs.length - 1];
   const newId = packs.length + 1;
   packs.push({
     id: newId,
+    name: '',
     shape: last.shape || 'cylinder',
     dims: {},
     gap: last.gap || 0,
     weight: 0,
+    count: 0,
     allocPct: 0,
-    color: PACK_COLORS[packs.length]
+    color: packColor(packs.length)
   });
   rebalanceAlloc();
   renderPacksPanel();
@@ -1280,7 +1310,7 @@ function addPack(){
 function removePack(idx){
   if(idx <= 0 || idx >= packs.length) return;
   packs.splice(idx, 1);
-  packs.forEach((p,i) => { p.id = i + 1; p.color = PACK_COLORS[i]; });
+  packs.forEach((p,i) => { p.id = i + 1; p.color = packColor(i); });
   rebalanceAlloc();
   renderPacksPanel();
 }
@@ -1308,7 +1338,7 @@ function suggestForPack(idx){
     }[packs[i].shape] || [];
     for(const k of required){
       if(!(d[k] > 0)){
-        alert(`Fill dimensions for Pack ${packs[i].id} (${packs[i].shape}) first.`);
+        alert(`Fill dimensions for ${packLabel(packs[i])} (${packs[i].shape}) first.`);
         return;
       }
     }
@@ -1771,13 +1801,18 @@ function calculate() {
     buildComparisonTable(p, pkgWeight);
   }
 
-  // Custom-count mode: honor user count as display cap; keep maxCount for per-pack grid
+  // Custom-count mode: each pack carries its own target count. Pack 1 reads the
+  // global #pkg_count; packs 2+ read their per-card .pack-count (stored on pack.count).
+  // Each pack's target is checked against ITS zone capacity (grid.count) at render.
   let modeOut=outputMode;
   if(outputMode==='custom'){
-    const inputCount=parseInt(document.getElementById('pkg_count').value)||0;
-    if(inputCount<=0){showErr('Enter count ≥ 1.');return;}
-    // attach to zoneResults[0] only (legacy behavior)
-    zoneResults[0].inputCount=inputCount;
+    const c0=parseInt(document.getElementById('pkg_count').value)||0;
+    if(c0<=0){showErr('Enter count ≥ 1 for Pack 1.');return;}
+    packs[0].count=c0;
+    for(const zr of zoneResults){
+      const want = (zr.pack===packs[0]) ? c0 : (parseInt(zr.pack.count)||0);
+      if(want>0) zr.inputCount=want;   // blank/0 on an extra pack = no check, show its max
+    }
   }
 
   renderResult({ mode:modeOut, container:c, zoneResults, totalCount, totalVol, totalWeight, chosenAxis, autoReport });
@@ -1825,23 +1860,40 @@ function renderResult(r){
     const lines=[];
     const axisLabel = r.chosenAxis ? r.chosenAxis : splitAxis;
     lines.push(`Mode: ${modeLabel(mode)}  |  Split: ${axisLabel}${r.autoReport || ''}`);
+    let overloadPacks=0;
     for(const dp of dispPerPack){
       const p=dp.zr.pack, g=dp.zr.grid, z=dp.zr.zone;
-      const capNote = (dp.zr.inputCount!==undefined && dp.cap<g.count)
-        ? ` <span style="color:#8b949e">(capped from ${fmtN(g.count)})</span>` : '';
-      lines.push(
-        `<span style="display:inline-block;width:10px;height:10px;background:${p.color};margin-right:6px;vertical-align:middle;border-radius:2px"></span>`
-        +`Pack ${p.id} (${p.shape}): <b>${fmtN(dp.cap)}</b> units${capNote} · `
-        +`Grid ${g.perL}×${g.perW}×${g.perH} · `
-        +`Zone ${Math.round(z.l)}×${Math.round(z.w)}×${Math.round(z.h)} cm`
-      );
+      const swatch=`<span style="display:inline-block;width:10px;height:10px;background:${p.color};margin-right:6px;vertical-align:middle;border-radius:2px"></span>`;
+      const grZone=`Grid ${g.perL}×${g.perW}×${g.perH} · Zone ${Math.round(z.l)}×${Math.round(z.w)}×${Math.round(z.h)} cm`;
+      if(dp.zr.inputCount!==undefined){
+        // Status Check: compare requested count vs this pack's zone capacity.
+        const want=dp.zr.inputCount, maxFit=g.count;
+        let status;
+        if(maxFit<=0){
+          overloadPacks++;
+          status=`<span style="color:#f85149">🚫 none fit — package too big for its alloc zone</span>`;
+        } else if(want>maxFit){
+          overloadPacks++;
+          status=`<span style="color:#f85149">🚫 overload — only ${fmtN(maxFit)} fit, excess ${fmtN(want-maxFit)} (need ${Math.ceil(want/maxFit)}×)</span>`;
+        } else if(want===maxFit){
+          status=`<span style="color:#3fb950">✅ exactly full</span>`;
+        } else {
+          status=`<span style="color:#f0883e">📦 fits — room for ${fmtN(maxFit-want)} more</span>`;
+        }
+        lines.push(`${swatch}${packLabel(p)} (${p.shape}): want <b>${fmtN(want)}</b> / max <b>${fmtN(maxFit)}</b> · ${status} · ${grZone}`);
+      } else {
+        lines.push(`${swatch}${packLabel(p)} (${p.shape}): <b>${fmtN(dp.cap)}</b> units · ${grZone}`);
+      }
     }
     const wtStr = dispTotalWeight>0
       ? `${fmtN(dispTotalWeight)} kg ${weightOK?'<span style="color:#3fb950">✓</span>':'<span style="color:#f85149">⚠ over payload</span>'}`
       : '—';
     const bar = `<span style="display:inline-block;width:90px;height:8px;background:#21262d;border-radius:4px;vertical-align:middle;margin:0 4px;overflow:hidden"><span style="display:block;height:100%;width:${Math.min(utilPct,100).toFixed(1)}%;background:${utilBarColor}"></span></span>`;
+    const overloadNote = overloadPacks>0
+      ? `  ·  <span style="color:#f85149">⚠ ${overloadPacks} pack${overloadPacks>1?'s':''} overload — container cannot bear the requested count</span>`
+      : '';
     lines.push(
-      `<b>Total: ${fmtN(dispTotalCount)} packages</b>  ·  Vol util: <b>${utilPct.toFixed(1)}%</b>${bar}·  Weight: ${wtStr}`
+      `<b>Total loaded: ${fmtN(dispTotalCount)} packages</b>  ·  Vol util: <b>${utilPct.toFixed(1)}%</b>${bar}·  Weight: ${wtStr}${overloadNote}`
     );
     rb.innerHTML=lines.map(l=>`<div class="info-line">${l}</div>`).join('');
     return;
@@ -2239,7 +2291,7 @@ function draw3D(c, zoneResults){
   if(leg){
     leg.style.display='flex';
     const packChips = zoneResults.map(zr =>
-      `<div class="leg-item"><div class="leg-dot" style="background:${zr.pack.color}"></div>Pack ${zr.pack.id} (${zr.pack.shape}): ${fmtN(zr.grid.count)}</div>`
+      `<div class="leg-item"><div class="leg-dot" style="background:${zr.pack.color}"></div>${packLabel(zr.pack)} (${zr.pack.shape}): ${fmtN(zr.grid.count)}</div>`
     ).join('');
     leg.innerHTML = packChips +
       `<div class="leg-item"><div class="leg-dot" style="background:rgba(56,139,253,0.3);border:1px solid #388bfd"></div>Unused space</div>`;
