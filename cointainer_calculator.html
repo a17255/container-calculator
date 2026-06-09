@@ -466,10 +466,9 @@ input[type=range]{width:65px;accent-color:#58a6ff}
   <div class="packs-panel">
     <div class="packs-hdr">
       <span>Additional packages</span>
-      <span class="alloc-sum ok" id="allocSum">Sum: 100% ✓</span>
     </div>
     <div class="split-axis" id="splitAxisRow">
-      <span>Split axis:</span>
+      <span>Fill axis:</span>
       <label><input type="radio" name="splitAxis" value="L" checked> L</label>
       <label><input type="radio" name="splitAxis" value="W"> W</label>
       <label><input type="radio" name="splitAxis" value="H"> H</label>
@@ -1024,7 +1023,6 @@ function applyDemoRestrictions(){
     document.querySelectorAll('.btn-remove').forEach(b => b.style.display='none');
     if(packs.length>1){
       packs = packs.slice(0,1);
-      packs[0].allocPct = 100;
       renderPacksPanel();
     }
   } else {
@@ -1180,7 +1178,6 @@ function renderPacksPanel(){
   // Legacy primary section IS Pack 1 — only render Pack 2+ here.
   const extras = packs.slice(1);
   list.innerHTML = extras.map((p, i) => packCardHTML(p, i + 1)).join('');
-  updateAllocSum();
   extras.forEach((_, i) => wirePackCard(i + 1));
   const btn = document.getElementById('btnAddPack');
   if(btn) btn.disabled = packs.length >= maxPacks();
@@ -1212,11 +1209,6 @@ function packCardHTML(p, idx){
       <label>Gap (cm): <input type="number" class="pack-gap" value="${p.gap||0}" min="0" step="1"></label>
       <label>Weight (kg): <input type="number" class="pack-weight" value="${p.weight||0}" min="0" step="0.1"></label>
       ${outputMode==='custom' ? `<label>Number of Packages: <input type="number" class="pack-count" value="${p.count||''}" min="1" step="1" placeholder="qty to check"></label>` : ''}
-      <div class="alloc-row">
-        <label>Alloc:</label>
-        <input type="range" class="pack-alloc" min="0" max="100" step="1" value="${p.allocPct}">
-        <span class="pack-alloc-val">${p.allocPct}%</span>
-      </div>
       <button class="btn-suggest-pack" onclick="suggestForPack(${idx})">🔍 Suggest dims for this pack</button>
     </div>`
   );
@@ -1271,21 +1263,6 @@ function wirePackCard(idx){
   card.querySelector('.pack-weight').addEventListener('input', e => { packs[idx].weight = +e.target.value; });
   const cnt = card.querySelector('.pack-count');
   if(cnt) cnt.addEventListener('input', e => { packs[idx].count = parseInt(e.target.value)||0; });
-  const alloc = card.querySelector('.pack-alloc');
-  const allocVal = card.querySelector('.pack-alloc-val');
-  alloc.addEventListener('input', e => {
-    packs[idx].allocPct = +e.target.value;
-    allocVal.textContent = packs[idx].allocPct + '%';
-    updateAllocSum();
-  });
-}
-
-function updateAllocSum(){
-  const sum = packs.reduce((a,p)=>a+(p.allocPct||0),0);
-  const el = document.getElementById('allocSum');
-  if(!el) return;
-  el.textContent = `Sum: ${sum.toFixed(0)}% ${Math.abs(sum-100)<0.5?'✓':'✗'}`;
-  el.className = `alloc-sum ${Math.abs(sum-100)<0.5?'ok':'bad'}`;
 }
 
 function addPack(){
@@ -1300,10 +1277,8 @@ function addPack(){
     gap: last.gap || 0,
     weight: 0,
     count: 0,
-    allocPct: 0,
     color: packColor(packs.length)
   });
-  rebalanceAlloc();
   renderPacksPanel();
 }
 
@@ -1311,17 +1286,7 @@ function removePack(idx){
   if(idx <= 0 || idx >= packs.length) return;
   packs.splice(idx, 1);
   packs.forEach((p,i) => { p.id = i + 1; p.color = packColor(i); });
-  rebalanceAlloc();
   renderPacksPanel();
-}
-
-function rebalanceAlloc(){
-  const n = packs.length;
-  if(n === 0) return;
-  const even = Math.floor(100 / n);
-  packs.forEach(p => { p.allocPct = even; });
-  const sum = packs.reduce((a,p)=>a+p.allocPct, 0);
-  packs[0].allocPct += (100 - sum);
 }
 
 function suggestForPack(idx){
@@ -1346,15 +1311,17 @@ function suggestForPack(idx){
 
   const c = getContainerDims();
   const axis = splitAxis === 'auto' ? 'L' : splitAxis;
-  const zones = computePackZones(c, axis, packs);
-  const z = zones[idx];
-  if(!z || z.l <= 0 || z.w <= 0 || z.h <= 0){
-    alert("No space remaining — increase this pack's allocation.");
+  // Free space = container minus what earlier packs (0..idx-1) consume when packed compactly.
+  const sub = packs.slice(0, idx).map((_,i)=>buildPkgObj(i));
+  const used = packCompact(c, axis, sub, 'auto', null).placements
+                 .reduce((a,pl)=> a + (axis==='L'?pl.slab.l : axis==='W'?pl.slab.w : pl.slab.h), 0);
+  const z = { l:c.l, w:c.w, h:c.h };
+  if(axis==='L') z.l=Math.max(0,c.l-used); else if(axis==='W') z.w=Math.max(0,c.w-used); else z.h=Math.max(0,c.h-used);
+  if(z.l<=0 || z.w<=0 || z.h<=0){
+    alert("No space remaining for this pack — earlier packs fill the container.");
     return;
   }
-  const shape = packs[idx].shape;
-  const reducedContainer = { l: z.l, w: z.w, h: z.h };
-  runSuggestSize(reducedContainer, shape, {}, 0);
+  runSuggestSize({ l:z.l, w:z.w, h:z.h }, packs[idx].shape, {}, 0);
 }
 
 const LS_KEY='cpc_v2';
@@ -1622,45 +1589,97 @@ function packDimsToPkgObj(p){
   return { type:p.shape, footL, footW, stackH, vol, gap, weight:p.weight, color:p.color };
 }
 
-function computePackZones(c, axis, packsArr){
-  // Single-pack short-circuit: zone == full container. Avoids any FP artefacts
-  // from c.l * (allocPct/100) and guarantees renderResult's util% matches the
-  // comparison table, which always computes against full c.l/c.w/c.h.
-  if(packsArr.length === 1){
-    return [{ l:c.l, w:c.w, h:c.h, offL:0, offW:0, offH:0 }];
+// ───────── Compact sequential-fill packer ─────────
+// The container is ONE shared space. Packs are placed in order along `axis`;
+// each consumes a contiguous slab, the cursor advances, and leftover space
+// flows to the next pack. Overload (custom mode) is a whole-SET condition
+// (Σplaced < Σwant), never per-zone. Single pack => one full-container slab,
+// which reproduces the legacy single-pack grid exactly.
+function buildPkgObj(i){
+  // Pack 0 uses legacy getPkgDims()/getPkgVolume() so DOM orientation + gap
+  // (mm→cm) are preserved and single-pack output stays byte-identical.
+  if(i===0){
+    const base=getPkgDims();
+    return { type:packs[0].shape, footL:base.footL, footW:base.footW, stackH:base.stackH,
+      gap:base.gap, vol:getPkgVolume(),
+      weight:packs[0].weight||(parseFloat(document.getElementById('p_weight').value)||0),
+      color:packs[0].color };
   }
-  const zones = [];
-  let cursor = 0;
-  for(const p of packsArr){
-    const frac = (p.allocPct || 0) / 100;
-    let z = { l:c.l, w:c.w, h:c.h, offL:0, offW:0, offH:0 };
-    if(axis === 'L'){ z.l = c.l * frac; z.offL = cursor; cursor += z.l; }
-    else if(axis === 'W'){ z.w = c.w * frac; z.offW = cursor; cursor += z.w; }
-    else if(axis === 'H'){ z.h = c.h * frac; z.offH = cursor; cursor += z.h; }
-    zones.push(z);
-  }
-  return zones;
+  return getPackDims(i);
 }
 
-function tryAllAxes(c, packsArr){
-  const axes = ['L','W','H'];
-  const results = {};
-  let best = null;
-  for(const ax of axes){
-    const zz = computePackZones(c, ax, packsArr);
-    let total = 0;
-    const perPack = [];
-    for(let i=0; i<packsArr.length; i++){
-      const p = getPackDims(i);
-      if(!p || !p.footL || !p.stackH){ perPack.push({perL:0,perW:0,perH:0,count:0}); continue; }
-      const g = calcGrid(zz[i], p);
-      perPack.push(g);
-      total += g.count;
+function emptyPlacement(pack, pkgObj, axis, cursor, want){
+  const slab={ l:0,w:0,h:0, offL:0,offW:0,offH:0 };
+  if(axis==='L') slab.offL=cursor; else if(axis==='W') slab.offW=cursor; else slab.offH=cursor;
+  return { pack, pkgObj, grid:{perL:0,perW:0,perH:0,count:0}, capInRemain:0,
+    slab, zone:slab, placedCount:0, fillAxis:axis, inputCount:want };
+}
+
+function packCompact(c, axis, pkgObjs, mode, wants){
+  const placements=[];
+  let totalCount=0, totalVol=0, totalWeight=0, totalRequested=0, cursor=0;
+  const fullA = axis==='L'?c.l : axis==='W'?c.w : c.h;
+  for(let i=0;i<pkgObjs.length;i++){
+    const pkgObj=pkgObjs[i];
+    const want = (mode==='custom') ? (wants[i]||0) : Infinity;
+    if(mode==='custom') totalRequested += (wants[i]||0);
+    if(!pkgObj || !pkgObj.footL || !pkgObj.stackH) continue;   // invalid/empty dims
+    if(mode==='custom' && want<=0) continue;                   // not requested → skip
+    const remA = Math.max(0, fullA - cursor);
+    if(remA<=0){
+      if(mode==='custom') placements.push(emptyPlacement(packs[i],pkgObj,axis,cursor,want));
+      continue;
     }
-    results[ax] = { total, zones: zz, perPack };
-    if(!best || total > results[best.axis].total) best = { axis: ax };
+    const box={ l:c.l, w:c.w, h:c.h, offL:0, offW:0, offH:0 };
+    if(axis==='L'){ box.l=remA; box.offL=cursor; }
+    else if(axis==='W'){ box.w=remA; box.offW=cursor; }
+    else { box.h=remA; box.offH=cursor; }
+    const grid=calcGrid(box, pkgObj);          // capacity within the remaining box
+    const cap=grid.count;
+    const gap=pkgObj.gap||0;
+    const stepA=(axis==='L'?pkgObj.footL : axis==='W'?pkgObj.footW : pkgObj.stackH)+gap;
+    const perA=axis==='L'?grid.perL : axis==='W'?grid.perW : grid.perH;
+    const crossCount=perA>0 ? cap/perA : 0;    // = product of the two non-axis pers
+    let placedCount, shelvesUsed;
+    if(mode==='custom'){
+      placedCount=Math.min(want, cap);
+      shelvesUsed=crossCount>0 ? Math.ceil(placedCount/crossCount) : 0;
+    } else {
+      placedCount=cap; shelvesUsed=perA;
+    }
+    if(placedCount<=0){
+      if(mode==='custom') placements.push(emptyPlacement(packs[i],pkgObj,axis,cursor,want));
+      continue;
+    }
+    const consumedA = shelvesUsed>0 ? shelvesUsed*stepA-gap : 0;
+    const slab={ l:c.l, w:c.w, h:c.h, offL:0, offW:0, offH:0 };
+    if(axis==='L'){ slab.l=consumedA; slab.offL=cursor; }
+    else if(axis==='W'){ slab.w=consumedA; slab.offW=cursor; }
+    else { slab.h=consumedA; slab.offH=cursor; }
+    // grid for drawing/labels: replace the axis-per with shelvesUsed so the
+    // draw loop never paints past the slab; keep `count` = true capacity.
+    const dgrid={ perL:grid.perL, perW:grid.perW, perH:grid.perH, count:cap };
+    if(axis==='L') dgrid.perL=shelvesUsed; else if(axis==='W') dgrid.perW=shelvesUsed; else dgrid.perH=shelvesUsed;
+    placements.push({
+      pack:packs[i], pkgObj, grid:dgrid, capInRemain:cap, slab, zone:slab,
+      placedCount, fillAxis:axis, inputCount:(mode==='custom'?want:undefined)
+    });
+    totalCount+=placedCount;
+    totalVol+=placedCount*(pkgObj.vol||0);
+    totalWeight+=placedCount*(pkgObj.weight||0);
+    cursor+=consumedA;   // inter-pack gap = 0 (leftover flows to next pack)
   }
-  return { best: best.axis, results };
+  return { placements, totalCount, totalVol, totalWeight, totalRequested };
+}
+
+function tryAllAxesCompact(c, pkgObjs, mode, wants){
+  const axes=['L','W','H']; const results={}; let best=null;
+  for(const ax of axes){
+    const r=packCompact(c, ax, pkgObjs, mode, wants);
+    results[ax]=r;
+    if(best===null || r.totalCount>results[best].totalCount) best=ax;
+  }
+  return { best, results };
 }
 
 function getPkgVolume() {
@@ -1729,94 +1748,55 @@ function calculate() {
     return;
   }
 
-  // Single-pack invariant: pack 0 must own 100% of the container. Without this,
-  // any drift (stale multi-pack state, FP accumulation) makes zones[0] a fraction
-  // of c.l/w/h, and calcGrid's floor() silently drops a full row — producing a
-  // util% that mismatches the comparison table (which always uses the full c).
-  if(packs.length === 1) packs[0].allocPct = 100;
+  // Build per-pack package objects (pack 0 keeps legacy orientation-aware dims).
+  const pkgObjs = packs.map((_,i)=>buildPkgObj(i));
 
-  // Allocation sum validation
-  const allocSum=packs.reduce((a,p)=>a+(p.allocPct||0),0);
-  if(Math.abs(allocSum-100)>0.5){
-    showErr('Pack allocation must sum to 100% (current: '+allocSum.toFixed(0)+'%).');return;
+  // Primary-pack size/fit checks (preserve legacy error UX).
+  const p0=pkgObjs[0];
+  if(!p0 || p0.footL<=0||p0.footW<=0||p0.stackH<=0){showErr('Package dimensions must be > 0.');return;}
+  if(p0.footL>c.l||p0.footW>c.w||p0.stackH>c.h){
+    const d=p0.footL>c.l?`L ${p0.footL}>${c.l}cm`:p0.footW>c.w?`W ${p0.footW}>${c.w}cm`:`H ${p0.stackH}>${c.h}cm`;
+    showErr('Package larger than container! ('+d+')');return;
   }
 
-  // Build pkg objects per pack. For pack 0, use getPkgDims() so orientation
-  // from DOM is preserved (single-pack behavior must match legacy).
-  let chosenAxis = splitAxis;
-  let autoReport = '';
-  if(splitAxis === 'auto' && outputMode === 'auto'){
-    const solved = tryAllAxes(c, packs);
+  // Custom (Status Check): collect a target count per pack. Pack 1 from the
+  // global #pkg_count; packs 2+ from their per-card count.
+  let wants=null;
+  if(outputMode==='custom'){
+    const c0=parseInt(document.getElementById('pkg_count').value)||0;
+    if(c0<=0){showErr('Enter count ≥ 1 for '+packLabel(packs[0])+'.');return;}
+    packs[0].count=c0;
+    wants = packs.map((p,i)=> i===0 ? c0 : (parseInt(p.count)||0));
+  }
+
+  // Compact sequential fill (replaces the alloc% zone-split model).
+  const mode = (outputMode==='custom') ? 'custom' : 'auto';
+  let chosenAxis = splitAxis, autoReport = '', packed;
+  if(splitAxis === 'auto'){
+    const solved = tryAllAxesCompact(c, pkgObjs, mode, wants);
     chosenAxis = solved.best;
-    autoReport = ` (auto — tried L=${solved.results.L.total}, W=${solved.results.W.total}, H=${solved.results.H.total})`;
+    packed = solved.results[solved.best];
+    autoReport = ` (auto — L=${solved.results.L.totalCount}, W=${solved.results.W.totalCount}, H=${solved.results.H.totalCount})`;
+  } else {
+    packed = packCompact(c, chosenAxis, pkgObjs, mode, wants);
   }
-  const axisForCalc = (chosenAxis === 'auto') ? 'L' : chosenAxis;
-  const zones = computePackZones(c, axisForCalc, packs);
-  const zoneResults=[];
-  let totalCount=0, totalVol=0, totalWeight=0;
-  const pkgObjs=[];
-  for(let i=0;i<packs.length;i++){
-    let pkgObj;
-    if(i===0){
-      // Primary pack: use legacy getPkgDims() to honor orientation + gap(mm→cm).
-      const base=getPkgDims();
-      pkgObj={
-        type:packs[i].shape, footL:base.footL, footW:base.footW, stackH:base.stackH,
-        gap:base.gap, vol:getPkgVolume(),
-        weight:packs[i].weight||(parseFloat(document.getElementById('p_weight').value)||0),
-        color:packs[i].color
-      };
-    } else {
-      pkgObj=getPackDims(i);
-    }
-    pkgObjs.push(pkgObj);
-    if(!pkgObj||!pkgObj.footL||!pkgObj.stackH){ continue; }
-    const z=zones[i];
-    const grid=calcGrid(z,pkgObj);
-    zoneResults.push({ pack:packs[i], pkgObj, zone:z, grid });
-    totalCount+=grid.count;
-    totalVol+=grid.count*(pkgObj.vol||0);
-    totalWeight+=grid.count*(pkgObj.weight||0);
-  }
+  const { placements, totalCount, totalVol, totalWeight, totalRequested } = packed;
 
-  // Primary-pack size/fit checks (preserve legacy error UX for single-pack usage)
-  if(pkgObjs.length>0){
-    const p0=pkgObjs[0];
-    if(p0.footL<=0||p0.footW<=0||p0.stackH<=0){showErr('Package dimensions must be > 0.');return;}
-    if(p0.footL>c.l||p0.footW>c.w||p0.stackH>c.h){
-      const d=p0.footL>c.l?`L ${p0.footL}>${c.l}cm`:p0.footW>c.w?`W ${p0.footW}>${c.w}cm`:`H ${p0.stackH}>${c.h}cm`;
-      showErr('Package larger than container! ('+d+')');return;
-    }
-  }
-  if(zoneResults.length===0||totalCount===0){
+  if(placements.length===0 || totalCount===0){
     showErr('Package does not fit with these dimensions.');return;
   }
 
   saveState();
 
-  // Comparison table: only meaningful for single-pack flow (primary shape)
+  // Comparison table: only meaningful for single-pack flow (primary shape).
   if(packs.length===1){
     const p=getPkgDims();
     const pkgWeight=parseFloat(document.getElementById('p_weight').value)||0;
     buildComparisonTable(p, pkgWeight);
   }
 
-  // Custom-count mode: each pack carries its own target count. Pack 1 reads the
-  // global #pkg_count; packs 2+ read their per-card .pack-count (stored on pack.count).
-  // Each pack's target is checked against ITS zone capacity (grid.count) at render.
-  let modeOut=outputMode;
-  if(outputMode==='custom'){
-    const c0=parseInt(document.getElementById('pkg_count').value)||0;
-    if(c0<=0){showErr('Enter count ≥ 1 for Pack 1.');return;}
-    packs[0].count=c0;
-    for(const zr of zoneResults){
-      const want = (zr.pack===packs[0]) ? c0 : (parseInt(zr.pack.count)||0);
-      if(want>0) zr.inputCount=want;   // blank/0 on an extra pack = no check, show its max
-    }
-  }
-
-  renderResult({ mode:modeOut, container:c, zoneResults, totalCount, totalVol, totalWeight, chosenAxis, autoReport });
-  lastViz=[c, zoneResults];
+  renderResult({ mode, container:c, placements, totalCount, totalVol, totalWeight, totalRequested, chosenAxis, autoReport });
+  lastViz=[c, placements];
   draw3D(...lastViz);
   if(isMobile())switchMobileTab('3d');
   if(typeof isDemo !== 'undefined' && isDemo) demoBump();
@@ -1837,114 +1817,50 @@ function modeLabel(m){
 function renderResult(r){
   const rb=document.getElementById('rbar');
   if(!rb) return;
-  if(r && r.zoneResults){
-    const { mode, container, zoneResults } = r;
-    // Custom mode: clamp per-pack displayed count (and totals) to zr.inputCount
-    let dispTotalCount=0, dispTotalVol=0, dispTotalWeight=0;
-    const dispPerPack=[];
-    for(const zr of zoneResults){
-      const rawCount = zr.grid.count;
-      const cap = (zr.inputCount!==undefined) ? Math.min(zr.inputCount, rawCount) : rawCount;
-      const vol = cap * (zr.pkgObj.vol||0);
-      const wt  = cap * (zr.pkgObj.weight||0);
-      dispPerPack.push({ zr, cap });
-      dispTotalCount += cap;
-      dispTotalVol   += vol;
-      dispTotalWeight+= wt;
-    }
-    const containerVol = container.l*container.w*container.h;
-    const utilPct = containerVol>0 ? (dispTotalVol/containerVol*100) : 0;
-    const payloadKg = container.payload || 0;
-    const weightOK = payloadKg<=0 || dispTotalWeight<=payloadKg;
-    const utilBarColor = utilPct>=90?'#3fb950':utilPct>=60?'#f0883e':'#58a6ff';
-    const lines=[];
-    const axisLabel = r.chosenAxis ? r.chosenAxis : splitAxis;
-    lines.push(`Mode: ${modeLabel(mode)}  |  Split: ${axisLabel}${r.autoReport || ''}`);
-    let overloadPacks=0;
-    for(const dp of dispPerPack){
-      const p=dp.zr.pack, g=dp.zr.grid, z=dp.zr.zone;
-      const swatch=`<span style="display:inline-block;width:10px;height:10px;background:${p.color};margin-right:6px;vertical-align:middle;border-radius:2px"></span>`;
-      const grZone=`Grid ${g.perL}×${g.perW}×${g.perH} · Zone ${Math.round(z.l)}×${Math.round(z.w)}×${Math.round(z.h)} cm`;
-      if(dp.zr.inputCount!==undefined){
-        // Status Check: compare requested count vs this pack's zone capacity.
-        const want=dp.zr.inputCount, maxFit=g.count;
-        let status;
-        if(maxFit<=0){
-          overloadPacks++;
-          status=`<span style="color:#f85149">🚫 none fit — package too big for its alloc zone</span>`;
-        } else if(want>maxFit){
-          overloadPacks++;
-          status=`<span style="color:#f85149">🚫 overload — only ${fmtN(maxFit)} fit, excess ${fmtN(want-maxFit)} (need ${Math.ceil(want/maxFit)}×)</span>`;
-        } else if(want===maxFit){
-          status=`<span style="color:#3fb950">✅ exactly full</span>`;
-        } else {
-          status=`<span style="color:#f0883e">📦 fits — room for ${fmtN(maxFit-want)} more</span>`;
-        }
-        lines.push(`${swatch}${packLabel(p)} (${p.shape}): want <b>${fmtN(want)}</b> / max <b>${fmtN(maxFit)}</b> · ${status} · ${grZone}`);
+  const { mode, container, placements } = r;
+  if(!placements){ rb.innerHTML=''; return; }
+  const containerVol = container.l*container.w*container.h;
+  const utilPct = containerVol>0 ? (r.totalVol/containerVol*100) : 0;
+  const payloadKg = container.payload || 0;
+  const weightOK = payloadKg<=0 || r.totalWeight<=payloadKg;
+  const utilBarColor = utilPct>=90?'#3fb950':utilPct>=60?'#f0883e':'#58a6ff';
+  const lines=[];
+  const axisLabel = r.chosenAxis ? r.chosenAxis : splitAxis;
+  lines.push(`Mode: ${modeLabel(mode)}  |  Fill axis: ${axisLabel}${r.autoReport || ''}`);
+  for(const pl of placements){
+    const p=pl.pack, g=pl.grid, s=pl.slab;
+    const swatch=`<span style="display:inline-block;width:10px;height:10px;background:${p.color};margin-right:6px;vertical-align:middle;border-radius:2px"></span>`;
+    const grBlock=`Grid ${g.perL}×${g.perW}×${g.perH} · Block ${Math.round(s.l)}×${Math.round(s.w)}×${Math.round(s.h)} cm`;
+    if(mode==='custom'){
+      const want=pl.inputCount||0, placed=pl.placedCount, room=Math.max(0, pl.capInRemain-placed);
+      let status;
+      if(placed>=want && want>0){
+        status = room>0 ? `<span style="color:#f0883e">✅ all fit · ${fmtN(room)} more would still fit here</span>`
+                        : `<span style="color:#3fb950">✅ all fit (snug)</span>`;
       } else {
-        lines.push(`${swatch}${packLabel(p)} (${p.shape}): <b>${fmtN(dp.cap)}</b> units · ${grZone}`);
+        status = `<span style="color:#f85149">⚠ ${fmtN(placed)} placed of ${fmtN(want)} — short ${fmtN(want-placed)}</span>`;
       }
+      lines.push(`${swatch}${packLabel(p)} (${p.shape}): want <b>${fmtN(want)}</b> / placed <b>${fmtN(placed)}</b> · ${status} · ${grBlock}`);
+    } else {
+      lines.push(`${swatch}${packLabel(p)} (${p.shape}): <b>${fmtN(pl.placedCount)}</b> units · ${grBlock}`);
     }
-    const wtStr = dispTotalWeight>0
-      ? `${fmtN(dispTotalWeight)} kg ${weightOK?'<span style="color:#3fb950">✓</span>':'<span style="color:#f85149">⚠ over payload</span>'}`
-      : '—';
-    const bar = `<span style="display:inline-block;width:90px;height:8px;background:#21262d;border-radius:4px;vertical-align:middle;margin:0 4px;overflow:hidden"><span style="display:block;height:100%;width:${Math.min(utilPct,100).toFixed(1)}%;background:${utilBarColor}"></span></span>`;
-    const overloadNote = overloadPacks>0
-      ? `  ·  <span style="color:#f85149">⚠ ${overloadPacks} pack${overloadPacks>1?'s':''} overload — container cannot bear the requested count</span>`
-      : '';
-    lines.push(
-      `<b>Total loaded: ${fmtN(dispTotalCount)} packages</b>  ·  Vol util: <b>${utilPct.toFixed(1)}%</b>${bar}·  Weight: ${wtStr}${overloadNote}`
-    );
-    rb.innerHTML=lines.map(l=>`<div class="info-line">${l}</div>`).join('');
-    return;
   }
-  // ── Legacy path (unreachable post-Task-4 but retained as fallback) ──
-  const el=rb;
-  let h='';
-
-  const weightHtml=()=>{
-    if(!r.totalWeight) return '';
-    const over=r.payload&&r.totalWeight>r.payload;
-    const cls=over?'wt-over':'wt-ok';
-    const pct=r.payload?(r.totalWeight/r.payload*100).toFixed(1):null;
-    return `<div class="${cls} wt-warn">⚖ Total weight: <b>${fmtN(r.totalWeight)} kg</b>`+
-      (r.payload?` / ${fmtN(r.payload)} kg limit (${pct}%)`+
-        (over?` — <b>OVERWEIGHT by ${fmtN(r.totalWeight-r.payload)} kg</b>`:' ✓')
-      :'')+`</div>`;
-  };
-
-  if(r.mode==='auto') {
-    const vpct=r.volUtil.toFixed(1), bc=r.volUtil>=90?'#3fb950':r.volUtil>=60?'#f0883e':'#58a6ff';
-    h+=`<div class="stat-row">
-      <span class="badge bg-green">🎯 Max Capacity</span>
-      <div class="sb"><div class="v">${fmtN(r.maxCount)}</div><div class="l">Max packages</div></div>
-      <div class="sb"><div class="v">${vpct}%</div><div class="l">Vol util<div class="prog-w"><div class="prog-b" style="width:${Math.min(r.volUtil,100).toFixed(1)}%;background:${bc}"></div></div></div></div>
-      <div class="sb"><div class="v">${r.perL}×${r.perW}×${r.perH}</div><div class="l">Grid L×W×H</div></div>
-      <div class="sb"><div class="v" style="color:#f0883e">${fmtM3(r.totalEmptyVol)} m³</div><div class="l">Total unused</div></div>
-    </div>
-    <div class="info-line">
-      Edge strips — L: <b>${r.remL.toFixed(1)} cm</b>, W: <b>${r.remW.toFixed(1)} cm</b>, H: <b>${r.remH.toFixed(1)} cm</b> &nbsp;|&nbsp;
-      Edge leftover: <b>${fmtM3(r.edgeRemVol)} m³</b>`+
-      (pkgType==='cylinder'||pkgType==='sphere'?` &nbsp;|&nbsp; Internal gaps: <b>${fmtM3(r.internalGapVol)} m³</b>`:'')
-    +`</div>`
-    +weightHtml();
-  } else {
-    const bc=r.status==='overload'?'#f85149':r.status==='full'?'#3fb950':'#f0883e';
-    const bdg=r.status==='full'?'bg-green':r.status==='overload'?'bg-red':'bg-orange';
-    const bl=r.status==='full'?'✅ Exactly Full':r.status==='overload'?'🚫 Overload':'📦 Partial';
-    h+=`<div class="stat-row">
-      <span class="badge ${bdg}">${bl}</span>
-      <div class="sb"><div class="v">${fmtN(r.inputCount)}</div><div class="l">Input</div></div>
-      <div class="sb"><div class="v">${fmtN(r.maxCount)}</div><div class="l">Max capacity</div></div>`;
-    if(r.status==='overload') h+=`<div class="sb"><div class="v" style="color:#f85149">+${fmtN(r.inputCount-r.maxCount)}</div><div class="l">Excess (need ${Math.ceil(r.inputCount/r.maxCount)}×)</div></div>`;
-    if(r.status==='partial')  h+=`<div class="sb"><div class="v" style="color:#f0883e">${fmtN(r.maxCount-r.inputCount)}</div><div class="l">Can add</div></div>`;
-    h+=`<div class="sb"><div class="v">${r.fillPct.toFixed(1)}%</div><div class="l">Fill<div class="prog-w"><div class="prog-b" style="width:${r.fillPct.toFixed(1)}%;background:${bc}"></div></div></div></div>
-      <div class="sb"><div class="v" style="color:#f0883e">${fmtM3(r.totalEmptyVol)} m³</div><div class="l">Total unused</div></div>
-    </div>
-    <div class="info-line">Edge strips — L: <b>${r.remL.toFixed(1)} cm</b>, W: <b>${r.remW.toFixed(1)} cm</b>, H: <b>${r.remH.toFixed(1)} cm</b> &nbsp;|&nbsp; Edge leftover: <b>${fmtM3(r.edgeRemVol)} m³</b></div>`
-    +weightHtml();
+  const wtStr = r.totalWeight>0
+    ? `${fmtN(r.totalWeight)} kg ${weightOK?'<span style="color:#3fb950">✓</span>':'<span style="color:#f85149">⚠ over payload</span>'}`
+    : '—';
+  const bar = `<span style="display:inline-block;width:90px;height:8px;background:#21262d;border-radius:4px;vertical-align:middle;margin:0 4px;overflow:hidden"><span style="display:block;height:100%;width:${Math.min(utilPct,100).toFixed(1)}%;background:${utilBarColor}"></span></span>`;
+  // Set-level overload (custom): the WHOLE set, not any single pack's zone.
+  let setNote='';
+  if(mode==='custom'){
+    const shortBy = (r.totalRequested||0) - r.totalCount;
+    setNote = shortBy>0
+      ? `  ·  <span style="color:#f85149">⚠ Set overload — container holds ${fmtN(r.totalCount)} of ${fmtN(r.totalRequested)} requested (short ${fmtN(shortBy)})</span>`
+      : `  ·  <span style="color:#3fb950">✓ All ${fmtN(r.totalRequested)} requested fit</span>`;
   }
-  el.innerHTML=h;
+  lines.push(
+    `<b>Total loaded: ${fmtN(r.totalCount)} packages</b>  ·  Vol util: <b>${utilPct.toFixed(1)}%</b>${bar}·  Weight: ${wtStr}${setNote}`
+  );
+  rb.innerHTML=lines.map(l=>`<div class="info-line">${l}</div>`).join('');
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2245,7 +2161,7 @@ function draw3D(c, zoneResults){
     const stepL = pkgObj.footL + gap;
     const stepW = pkgObj.footW + gap;
     const stepH = pkgObj.stackH + gap;
-    const drawLimit = (zr.inputCount!==undefined) ? zr.inputCount : grid.count;
+    const drawLimit = (zr.placedCount!==undefined) ? zr.placedCount : grid.count;
     requestedTotal += drawLimit;
     const xR=cosAz>=0?mkR(0,grid.perL-1,1):mkR(grid.perL-1,0,-1);
     const yR=sinAz>=0?mkR(0,grid.perW-1,1):mkR(grid.perW-1,0,-1);
@@ -2291,7 +2207,7 @@ function draw3D(c, zoneResults){
   if(leg){
     leg.style.display='flex';
     const packChips = zoneResults.map(zr =>
-      `<div class="leg-item"><div class="leg-dot" style="background:${zr.pack.color}"></div>${packLabel(zr.pack)} (${zr.pack.shape}): ${fmtN(zr.grid.count)}</div>`
+      `<div class="leg-item"><div class="leg-dot" style="background:${zr.pack.color}"></div>${packLabel(zr.pack)} (${zr.pack.shape}): ${fmtN(zr.placedCount!==undefined?zr.placedCount:zr.grid.count)}</div>`
     ).join('');
     leg.innerHTML = packChips +
       `<div class="leg-item"><div class="leg-dot" style="background:rgba(56,139,253,0.3);border:1px solid #388bfd"></div>Unused space</div>`;
