@@ -1130,6 +1130,7 @@ let pkgType='cylinder', orientation='z', outputMode='auto';
 let viewAz=Math.PI/4, viewEl=Math.PI/6, lastViz=null;
 let cmpVisible=true;
 let viewMode='compact'; // 'compact' | 'layered' | 'top2d' | 'exploded'
+let _loadedPacksCfg=null; // packs[] config parsed from storage, merged in init()
 
 // Array-based pack state
 let packs = [
@@ -1351,6 +1352,8 @@ function saveState() {
     p_weight:document.getElementById('p_weight').value,
     pkg_count:document.getElementById('pkg_count').value,
     viewAz,viewEl,
+    splitAxis, viewMode,
+    packsCfg: packs.map(p=>({id:p.id,name:p.name||'',shape:p.shape,dims:p.dims||{},gap:p.gap||0,weight:p.weight||0,count:p.count||0})),
   }));}catch(e){}
 }
 function loadState() {
@@ -1368,7 +1371,35 @@ function loadState() {
     if(st.pkgType)setType(st.pkgType);
     if(st.orientation){const migr={'vertical':'z','horizontal':'x'};setOrientation(migr[st.orientation]||st.orientation);}
     if(st.outputMode)setMode(st.outputMode);
+    if(st.splitAxis){ splitAxis=st.splitAxis; const r=document.querySelector(`input[name=splitAxis][value=${st.splitAxis}]`); if(r)r.checked=true; }
+    if(st.viewMode){ viewMode=st.viewMode; const vs=document.getElementById('viewSel'); if(vs)vs.value=viewMode; }
+    _loadedPacksCfg = Array.isArray(st.packsCfg) ? st.packsCfg : null;
   }catch(e){}
+}
+
+// Merge persisted packs[] config into the live array (called in init after
+// pack 0 is seeded from the legacy DOM inputs). Entry 0 contributes only the
+// custom name; entries 1+ rebuild the extra packs.
+function applyLoadedPacksCfg(){
+  if(typeof isDemo!=='undefined' && isDemo){ _loadedPacksCfg=null; return; } // demo = single pack
+  if(!_loadedPacksCfg || !_loadedPacksCfg.length){ _loadedPacksCfg=null; return; }
+  const c0=_loadedPacksCfg[0];
+  if(c0){ if(c0.name) packs[0].name=c0.name; if(c0.count) packs[0].count=c0.count; }
+  const cap=maxPacks();
+  for(let i=1; i<_loadedPacksCfg.length && packs.length<cap; i++){
+    const cfg=_loadedPacksCfg[i]||{};
+    packs.push({
+      id: packs.length+1,
+      name: cfg.name||'',
+      shape: cfg.shape||'cylinder',
+      dims: cfg.dims||{},
+      gap: cfg.gap||0,
+      weight: cfg.weight||0,
+      count: cfg.count||0,
+      color: packColor(packs.length)
+    });
+  }
+  _loadedPacksCfg=null;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1398,6 +1429,7 @@ function init() {
   drawEmpty3D();
   initMobileTabs();
   seedPack0FromLegacy();
+  applyLoadedPacksCfg();
   renderPacksPanel();
   updateDemoCounterUI();
   document.querySelectorAll('input[name=splitAxis]').forEach(r => {
