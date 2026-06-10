@@ -209,6 +209,7 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 .pack-card { border:1px solid #30363d; border-left:4px solid var(--pack-color,#3fb950); border-radius:4px; padding:10px; margin-bottom:10px; background:#161b22; }
 .pack-card-hdr { display:flex; justify-content:space-between; align-items:center; font-weight:600; margin-bottom:6px; color:#c9d1d9; }
 .pack-name { cursor:text; border-bottom:1px dotted #484f58; }
+.pack-include { font-size:0.72rem; color:#8b949e; display:inline-flex; align-items:center; gap:3px; cursor:pointer; }
 .pack-name:hover { border-bottom-color:#58a6ff; }
 .pack-color-swatch { display:inline-block; width:12px; height:12px; border-radius:2px; margin-right:6px; vertical-align:middle; }
 .pack-card label { display:flex; align-items:center; gap:6px; margin:4px 0; font-size:13px; color:#c9d1d9; }
@@ -373,14 +374,13 @@ input[type=range]{width:65px;accent-color:#58a6ff}
 <!-- ═══ LEFT ═══ -->
 <div class="left">
 
-  <!-- Saved configs -->
+  <!-- Config file save/load -->
   <div class="card" id="cfgCard">
-    <div class="sec">💾 Saved Configs</div>
+    <div class="sec">📁 Config File</div>
     <div class="cfg-bar">
-      <select id="cfgSlots" title="Your saved configurations"><option value="">— saved configs —</option></select>
-      <button class="cfg-btn" onclick="loadNamedConfig()" title="Load the selected config">📂 Load</button>
-      <button class="cfg-btn" onclick="deleteNamedConfig()" title="Delete the selected config">🗑</button>
-      <button class="cfg-btn cfg-save" onclick="saveNamedConfig()" title="Save the current container + all packs as a named config">💾 Save current</button>
+      <button class="cfg-btn cfg-save" onclick="saveConfigToFile()" title="Download the current container + all packs as a .json file">💾 Save to file</button>
+      <button class="cfg-btn" onclick="document.getElementById('cfgFileInput').click()" title="Load a previously saved .json config file">📂 Load from file</button>
+      <input type="file" id="cfgFileInput" accept=".json,.txt,application/json" style="display:none" onchange="loadConfigFromFile(event)">
     </div>
   </div>
 
@@ -411,6 +411,7 @@ input[type=range]{width:65px;accent-color:#58a6ff}
   <!-- Package Shape -->
   <div class="card">
     <div class="sec">📦 Package Shape</div>
+    <label class="pack-include" style="margin:0 0 7px" title="Include Pack 1 in the load"><input type="checkbox" id="p0_inc" checked onchange="packs[0].excluded=!this.checked"> Include in load</label>
     <div class="fg" style="margin-bottom:7px">
       <select id="shapeSelect" onchange="setType(this.value)" style="font-size:0.82rem">
         <optgroup label="Standard shapes">
@@ -488,7 +489,7 @@ input[type=range]{width:65px;accent-color:#58a6ff}
     <div class="packs-hdr">
       <span>Additional packages</span>
     </div>
-    <div class="split-axis" id="splitAxisRow">
+    <div class="split-axis" id="splitAxisRow" style="display:none">
       <span>Fill axis:</span>
       <label><input type="radio" name="splitAxis" value="L" checked> L</label>
       <label><input type="radio" name="splitAxis" value="W"> W</label>
@@ -1153,7 +1154,7 @@ let _loadedPacksCfg=null; // packs[] config parsed from storage, merged in init(
 
 // Array-based pack state
 let packs = [
-  { id: 1, name: '', shape: 'cylinder', dims: {}, gap: 0, weight: 0, count: 0, color: '#3fb950' }
+  { id: 1, name: '', shape: 'cylinder', dims: {}, gap: 0, weight: 0, count: 0, excluded: false, color: '#3fb950' }
 ];
 let splitAxis = 'L'; // fill axis: 'L' | 'W' | 'H' | 'auto'
 const PACK_COLORS = ['#3fb950','#4ecca3','#f0883e','#58a6ff','#bc8cff','#f778ba','#ffa657','#7ee787',
@@ -1206,6 +1207,7 @@ function seedPack0FromLegacy(){
 function renderPacksPanel(){
   const list = document.getElementById('packsList');
   if(!list) return;
+  const p0i=document.getElementById('p0_inc'); if(p0i) p0i.checked=!packs[0].excluded;
   // Legacy primary section IS Pack 1 — only render Pack 2+ here.
   const extras = packs.slice(1);
   list.innerHTML = extras.map((p, i) => packCardHTML(p, i + 1)).join('');
@@ -1228,7 +1230,7 @@ function packCardHTML(p, idx){
     `<div class="pack-card" style="--pack-color:${p.color}" data-pack-idx="${idx}">
       <div class="pack-card-hdr">
         <span><span class="pack-color-swatch" style="background:${p.color}"></span><span class="pack-name" title="Double-click to rename">${packLabel(p)}</span></span>
-        ${removeBtn}
+        <span><label class="pack-include" title="Include this pack in the load"><input type="checkbox" class="pack-inc"${p.excluded?'':' checked'}> load</label> ${removeBtn}</span>
       </div>
       <label>Shape:
         <select class="pack-shape">
@@ -1294,6 +1296,9 @@ function wirePackCard(idx){
   card.querySelector('.pack-weight').addEventListener('input', e => { packs[idx].weight = +e.target.value; saveState(); });
   const cnt = card.querySelector('.pack-count');
   if(cnt) cnt.addEventListener('input', e => { packs[idx].count = parseInt(e.target.value)||0; saveState(); });
+  const inc = card.querySelector('.pack-inc');
+  if(inc) inc.addEventListener('change', e => { packs[idx].excluded = !e.target.checked; card.style.opacity = e.target.checked ? '' : '0.5'; });
+  if(packs[idx].excluded) card.style.opacity='0.5';
 }
 
 function addPack(){
@@ -1308,6 +1313,7 @@ function addPack(){
     gap: last.gap || 0,
     weight: 0,
     count: 0,
+    excluded: false,
     color: packColor(packs.length)
   });
   renderPacksPanel();
@@ -1341,18 +1347,8 @@ function suggestForPack(idx){
   }
 
   const c = getContainerDims();
-  const axis = splitAxis === 'auto' ? 'L' : splitAxis;
-  // Free space = container minus what earlier packs (0..idx-1) consume when packed compactly.
-  const sub = packs.slice(0, idx).map((_,i)=>buildPkgObj(i));
-  const used = packCompact(c, axis, sub, 'auto', null).placements
-                 .reduce((a,pl)=> a + (axis==='L'?pl.slab.l : axis==='W'?pl.slab.w : pl.slab.h), 0);
-  const z = { l:c.l, w:c.w, h:c.h };
-  if(axis==='L') z.l=Math.max(0,c.l-used); else if(axis==='W') z.w=Math.max(0,c.w-used); else z.h=Math.max(0,c.h-used);
-  if(z.l<=0 || z.w<=0 || z.h<=0){
-    alert("No space remaining for this pack — earlier packs fill the container.");
-    return;
-  }
-  runSuggestSize({ l:z.l, w:z.w, h:z.h }, packs[idx].shape, {}, 0);
+  // Suggest dims against the full container (other packs share the same space via the packer).
+  runSuggestSize({ l:c.l, w:c.w, h:c.h }, packs[idx].shape, {}, 0);
 }
 
 const LS_KEY='cpc_v2';
@@ -1372,11 +1368,13 @@ function buildSavePayload(){
     pkg_count:document.getElementById('pkg_count').value,
     viewAz,viewEl,
     splitAxis, viewMode,
-    packsCfg: packs.map(p=>({id:p.id,name:p.name||'',shape:p.shape,dims:p.dims||{},gap:p.gap||0,weight:p.weight||0,count:p.count||0})),
+    packsCfg: packs.map(p=>({id:p.id,name:p.name||'',shape:p.shape,dims:p.dims||{},gap:p.gap||0,weight:p.weight||0,count:p.count||0,excluded:!!p.excluded})),
   };
 }
-function saveState(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(buildSavePayload())); }catch(e){} }
-function loadState() { try{ applyState(JSON.parse(localStorage.getItem(LS_KEY)||'{}')); }catch(e){} }
+// Config web storage disabled by request — saves go to FILES (saveConfigToFile).
+// buildSavePayload()/applyState() are still used by file save/load + share links.
+function saveState(){ /* no-op: no config web storage */ }
+function loadState(){ /* no-op: no auto-restore; config loads from file or share link */ }
 function applyState(st){
   if(!st || typeof st!=='object') return;
   const s=(id,v)=>{if(v!==undefined&&v!==''){const el=document.getElementById(id);if(el)el.value=v;}};
@@ -1403,7 +1401,7 @@ function applyLoadedPacksCfg(){
   if(typeof isDemo!=='undefined' && isDemo){ _loadedPacksCfg=null; return; } // demo = single pack
   if(!_loadedPacksCfg || !_loadedPacksCfg.length){ _loadedPacksCfg=null; return; }
   const c0=_loadedPacksCfg[0];
-  if(c0){ if(c0.name) packs[0].name=c0.name; if(c0.count) packs[0].count=c0.count; }
+  if(c0){ if(c0.name) packs[0].name=c0.name; if(c0.count) packs[0].count=c0.count; packs[0].excluded=!!c0.excluded; }
   const cap=maxPacks();
   for(let i=1; i<_loadedPacksCfg.length && packs.length<cap; i++){
     const cfg=_loadedPacksCfg[i]||{};
@@ -1415,6 +1413,7 @@ function applyLoadedPacksCfg(){
       gap: cfg.gap||0,
       weight: cfg.weight||0,
       count: cfg.count||0,
+      excluded: !!cfg.excluded,
       color: packColor(packs.length)
     });
   }
@@ -1488,45 +1487,36 @@ function lockDownReadOnly(){
 }
 
 // ───────── Named save/load configs (manual slots, separate from auto-restore) ─────────
-const LS_CONFIGS='cpc_saved_configs';
-function getSavedConfigs(){ try{ return JSON.parse(localStorage.getItem(LS_CONFIGS)||'{}')||{}; }catch(e){ return {}; } }
-function setSavedConfigs(o){ try{ localStorage.setItem(LS_CONFIGS, JSON.stringify(o)); }catch(e){ alert('Could not save (storage full?).'); } }
-function refreshConfigSlots(sel){
-  const el=document.getElementById('cfgSlots'); if(!el) return;
-  const o=getSavedConfigs();
-  const names=Object.keys(o).sort((a,b)=>a.localeCompare(b));
-  const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-  el.innerHTML=`<option value="">— saved configs (${names.length}) —</option>`+
-    names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
-  if(sel!==undefined) el.value=sel;
+// Config save/load via FILE (no web storage). buildSavePayload/applyShareConfig reused.
+function saveConfigToFile(){
+  try{
+    const def='container-config-'+new Date().toISOString().slice(0,10);
+    let name=(window.prompt('File name (without .json):', def)||'').trim();
+    if(!name) return;
+    name=name.replace(/[\\/:*?"<>|]/g,'_');
+    const blob=new Blob([JSON.stringify(buildSavePayload(),null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=name+'.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    shareToast(`💾 Saved "${name}.json" — container + ${packs.length} pack(s). Keep this file; Load it anytime.`);
+  }catch(e){ alert('Could not save file.'); }
 }
-function saveNamedConfig(){
-  const cur=(document.getElementById('cfgSlots')||{}).value||'';
-  const name=(window.prompt('Save current setup as (name):', cur)||'').trim();
-  if(!name) return;
-  const o=getSavedConfigs();
-  if(o[name] && !window.confirm(`Overwrite existing config "${name}"?`)) return;
-  o[name]=buildSavePayload();
-  setSavedConfigs(o);
-  refreshConfigSlots(name);
-  shareToast(`💾 Saved "${name}" — container + ${packs.length} pack(s). Load it anytime from the Saved Configs box.`);
-}
-function loadNamedConfig(){
-  const el=document.getElementById('cfgSlots'); const name=el?el.value:'';
-  if(!name){ shareToast('Pick a saved config from the list first.'); return; }
-  const cfg=getSavedConfigs()[name];
-  if(!cfg){ shareToast(`Config "${name}" not found.`); return; }
-  applyShareConfig(cfg);          // applies container + all packs, then recalculates
-  refreshConfigSlots(name);
-  shareToast(`📂 Loaded "${name}".`);
-}
-function deleteNamedConfig(){
-  const el=document.getElementById('cfgSlots'); const name=el?el.value:'';
-  if(!name){ shareToast('Pick a saved config to delete.'); return; }
-  if(!window.confirm(`Delete saved config "${name}"?`)) return;
-  const o=getSavedConfigs(); delete o[name]; setSavedConfigs(o);
-  refreshConfigSlots('');
-  shareToast(`🗑 Deleted "${name}".`);
+function loadConfigFromFile(ev){
+  const file=ev.target.files && ev.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const cfg=JSON.parse(reader.result);
+      if(!cfg || typeof cfg!=='object') throw new Error('bad');
+      applyShareConfig(cfg);    // applies container + all packs, then recalculates
+      shareToast(`📂 Loaded "${file.name}".`);
+    }catch(e){ shareToast('⚠ Not a valid config file.'); }
+    ev.target.value='';         // allow re-loading the same file
+  };
+  reader.onerror=()=>{ shareToast('⚠ Could not read file.'); ev.target.value=''; };
+  reader.readAsText(file);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1558,7 +1548,6 @@ function init() {
   seedPack0FromLegacy();
   applyLoadedPacksCfg();
   renderPacksPanel();
-  refreshConfigSlots();
   updateDemoCounterUI();
   document.querySelectorAll('input[name=splitAxis]').forEach(r => {
     r.addEventListener('change', e => { splitAxis = e.target.value; });
@@ -1780,78 +1769,55 @@ function buildPkgObj(i){
   return getPackDims(i);
 }
 
-function emptyPlacement(pack, pkgObj, axis, cursor, want){
-  const slab={ l:0,w:0,h:0, offL:0,offW:0,offH:0 };
-  if(axis==='L') slab.offL=cursor; else if(axis==='W') slab.offW=cursor; else slab.offH=cursor;
-  return { pack, pkgObj, grid:{perL:0,perW:0,perH:0,count:0}, capInRemain:0,
-    slab, zone:slab, placedCount:0, fillAxis:axis, inputCount:want };
-}
-
-function packCompact(c, axis, pkgObjs, mode, wants){
-  const placements=[];
-  let totalCount=0, totalVol=0, totalWeight=0, totalRequested=0, cursor=0;
-  const fullA = axis==='L'?c.l : axis==='W'?c.w : c.h;
-  for(let i=0;i<pkgObjs.length;i++){
-    const pkgObj=pkgObjs[i];
-    const want = (mode==='custom') ? (wants[i]||0) : Infinity;
-    if(mode==='custom') totalRequested += (wants[i]||0);
-    if(!pkgObj || !pkgObj.footL || !pkgObj.stackH) continue;   // invalid/empty dims
-    if(mode==='custom' && want<=0) continue;                   // not requested → skip
-    const remA = Math.max(0, fullA - cursor);
-    if(remA<=0){
-      if(mode==='custom') placements.push(emptyPlacement(packs[i],pkgObj,axis,cursor,want));
-      continue;
+// 3D guillotine free-space packer. Packs the BIGGEST boxes first into a shared
+// container, splitting each used free-space into up to 3 leftovers (right/back/top)
+// so later packs fill the spare width/height/length. Far higher fill than a
+// single-axis slab pass, and overload becomes a true whole-set condition.
+// items: [{idx, pack, pkgObj, want}] (want = Infinity for auto mode).
+// Returns regions[] (grid clusters with x/y/z origin), per-pack summary[], totals.
+function packBins(c, items, mode){
+  const free=[{x:0,y:0,z:0,l:c.l,w:c.w,h:c.h}];
+  const regions=[]; const placedBy={};
+  let totalCount=0, totalVol=0, totalWeight=0, totalRequested=0;
+  for(const it of items){ placedBy[it.idx]=0; if(mode==='custom') totalRequested += (it.want||0); }
+  // big-box-first dramatically improves fill (validated on real configs).
+  const order=[...items].sort((a,b)=>
+    (b.pkgObj.footL*b.pkgObj.footW*b.pkgObj.stackH) - (a.pkgObj.footL*a.pkgObj.footW*a.pkgObj.stackH));
+  for(const it of order){
+    const p=it.pkgObj;
+    if(!p || !p.footL || !p.footW || !p.stackH) continue;
+    let rem = (mode==='custom') ? (it.want||0) : Infinity;
+    if(mode==='custom' && rem<=0) continue;
+    let guard=0;
+    while(rem>0 && guard++<200000){
+      // bottom-left-back free space that fits one unit
+      let bi=-1, bk=Infinity;
+      for(let i=0;i<free.length;i++){ const f=free[i];
+        if(f.l>=p.footL && f.w>=p.footW && f.h>=p.stackH){
+          const k=f.z*1e8 + f.y*1e4 + f.x; if(k<bk){ bk=k; bi=i; } } }
+      if(bi<0) break;                                   // pack no longer fits anywhere
+      const f=free[bi];
+      const nl=Math.floor(f.l/p.footL), nw=Math.floor(f.w/p.footW), nh=Math.floor(f.h/p.stackH);
+      const cap=nl*nw*nh, take=Math.min(rem, cap);
+      const layerCap=nl*nw, layersUsed=Math.ceil(take/layerCap);  // reserve only used H layers
+      const ol=nl*p.footL, ow=nw*p.footW, oh=layersUsed*p.stackH;
+      regions.push({ pack:it.pack, pkgObj:p, x:f.x, y:f.y, z:f.z,
+        grid:{perL:nl, perW:nw, perH:layersUsed}, count:take });
+      placedBy[it.idx]+=take; totalCount+=take;
+      totalVol+=take*(p.vol||0); totalWeight+=take*(p.weight||0);
+      rem-=take;
+      free.splice(bi,1);
+      const R={x:f.x+ol, y:f.y, z:f.z, l:f.l-ol, w:f.w,    h:f.h};   // right of block
+      const B={x:f.x,    y:f.y+ow, z:f.z, l:ol,    w:f.w-ow, h:f.h};  // behind block
+      const T={x:f.x,    y:f.y, z:f.z+oh, l:ol,    w:ow,    h:f.h-oh}; // above block
+      for(const s of [R,B,T]) if(s.l>0 && s.w>0 && s.h>0) free.push(s);
+      if(take<cap) break;                               // partial last block → pack done
     }
-    const box={ l:c.l, w:c.w, h:c.h, offL:0, offW:0, offH:0 };
-    if(axis==='L'){ box.l=remA; box.offL=cursor; }
-    else if(axis==='W'){ box.w=remA; box.offW=cursor; }
-    else { box.h=remA; box.offH=cursor; }
-    const grid=calcGrid(box, pkgObj);          // capacity within the remaining box
-    const cap=grid.count;
-    const gap=pkgObj.gap||0;
-    const stepA=(axis==='L'?pkgObj.footL : axis==='W'?pkgObj.footW : pkgObj.stackH)+gap;
-    const perA=axis==='L'?grid.perL : axis==='W'?grid.perW : grid.perH;
-    const crossCount=perA>0 ? cap/perA : 0;    // = product of the two non-axis pers
-    let placedCount, shelvesUsed;
-    if(mode==='custom'){
-      placedCount=Math.min(want, cap);
-      shelvesUsed=crossCount>0 ? Math.ceil(placedCount/crossCount) : 0;
-    } else {
-      placedCount=cap; shelvesUsed=perA;
-    }
-    if(placedCount<=0){
-      if(mode==='custom') placements.push(emptyPlacement(packs[i],pkgObj,axis,cursor,want));
-      continue;
-    }
-    const consumedA = shelvesUsed>0 ? shelvesUsed*stepA-gap : 0;
-    const slab={ l:c.l, w:c.w, h:c.h, offL:0, offW:0, offH:0 };
-    if(axis==='L'){ slab.l=consumedA; slab.offL=cursor; }
-    else if(axis==='W'){ slab.w=consumedA; slab.offW=cursor; }
-    else { slab.h=consumedA; slab.offH=cursor; }
-    // grid for drawing/labels: replace the axis-per with shelvesUsed so the
-    // draw loop never paints past the slab; keep `count` = true capacity.
-    const dgrid={ perL:grid.perL, perW:grid.perW, perH:grid.perH, count:cap };
-    if(axis==='L') dgrid.perL=shelvesUsed; else if(axis==='W') dgrid.perW=shelvesUsed; else dgrid.perH=shelvesUsed;
-    placements.push({
-      pack:packs[i], pkgObj, grid:dgrid, capInRemain:cap, slab, zone:slab,
-      placedCount, fillAxis:axis, inputCount:(mode==='custom'?want:undefined)
-    });
-    totalCount+=placedCount;
-    totalVol+=placedCount*(pkgObj.vol||0);
-    totalWeight+=placedCount*(pkgObj.weight||0);
-    cursor+=consumedA;   // inter-pack gap = 0 (leftover flows to next pack)
   }
-  return { placements, totalCount, totalVol, totalWeight, totalRequested };
-}
-
-function tryAllAxesCompact(c, pkgObjs, mode, wants){
-  const axes=['L','W','H']; const results={}; let best=null;
-  for(const ax of axes){
-    const r=packCompact(c, ax, pkgObjs, mode, wants);
-    results[ax]=r;
-    if(best===null || r.totalCount>results[best].totalCount) best=ax;
-  }
-  return { best, results };
+  // per-pack summary in INPUT order (for display)
+  const summary=items.map(it=>({ pack:it.pack, pkgObj:it.pkgObj,
+    placed:placedBy[it.idx]||0, want:(mode==='custom'?(it.want||0):undefined) }));
+  return { regions, summary, totalCount, totalVol, totalWeight, totalRequested };
 }
 
 function getPkgVolume() {
@@ -1922,53 +1888,72 @@ function calculate() {
 
   // Build per-pack package objects (pack 0 keeps legacy orientation-aware dims).
   const pkgObjs = packs.map((_,i)=>buildPkgObj(i));
-
-  // Primary-pack size/fit checks (preserve legacy error UX).
-  const p0=pkgObjs[0];
-  if(!p0 || p0.footL<=0||p0.footW<=0||p0.stackH<=0){showErr('Package dimensions must be > 0.');return;}
-  if(p0.footL>c.l||p0.footW>c.w||p0.stackH>c.h){
-    const d=p0.footL>c.l?`L ${p0.footL}>${c.l}cm`:p0.footW>c.w?`W ${p0.footW}>${c.w}cm`:`H ${p0.stackH}>${c.h}cm`;
-    showErr('Package larger than container! ('+d+')');return;
-  }
-
-  // Custom (Status Check): collect a target count per pack. Pack 1 from the
-  // global #pkg_count; packs 2+ from their per-card count.
-  let wants=null;
-  if(outputMode==='custom'){
-    const c0=parseInt(document.getElementById('pkg_count').value)||0;
-    if(c0<=0){showErr('Enter count ≥ 1 for '+packLabel(packs[0])+'.');return;}
-    packs[0].count=c0;
-    wants = packs.map((p,i)=> i===0 ? c0 : (parseInt(p.count)||0));
-  }
-
-  // Compact sequential fill (replaces the alloc% zone-split model).
   const mode = (outputMode==='custom') ? 'custom' : 'auto';
-  let chosenAxis = splitAxis, autoReport = '', packed;
-  if(splitAxis === 'auto'){
-    const solved = tryAllAxesCompact(c, pkgObjs, mode, wants);
-    chosenAxis = solved.best;
-    packed = solved.results[solved.best];
-    autoReport = ` (auto — L=${solved.results.L.totalCount}, W=${solved.results.W.totalCount}, H=${solved.results.H.totalCount})`;
-  } else {
-    packed = packCompact(c, chosenAxis, pkgObjs, mode, wants);
-  }
-  const { placements, totalCount, totalVol, totalWeight, totalRequested } = packed;
 
-  if(placements.length===0 || totalCount===0){
-    showErr('Package does not fit with these dimensions.');return;
+  // Primary-pack size/fit checks (only when pack 0 is included in the load).
+  if(!packs[0].excluded){
+    const p0=pkgObjs[0];
+    if(!p0 || p0.footL<=0||p0.footW<=0||p0.stackH<=0){showErr('Package dimensions must be > 0.');return;}
+    if(p0.footL>c.l||p0.footW>c.w||p0.stackH>c.h){
+      const d=p0.footL>c.l?`L ${p0.footL}>${c.l}cm`:p0.footW>c.w?`W ${p0.footW}>${c.w}cm`:`H ${p0.stackH}>${c.h}cm`;
+      showErr('Package larger than container! ('+d+')');return;
+    }
+  }
+
+  let viz, totalCount, totalVol, totalWeight, totalRequested, summary;
+
+  if(packs.length===1){
+    // SINGLE-PACK: legacy full-container grid → byte-identical output + comparison table.
+    if(packs[0].excluded){ showErr('Include at least one package.');return; }
+    const p0=pkgObjs[0];
+    const grid=calcGrid({l:c.l,w:c.w,h:c.h}, p0);
+    if(grid.count<=0){ showErr('Package does not fit with these dimensions.');return; }
+    let placed=grid.count, want;
+    if(mode==='custom'){
+      want=parseInt(document.getElementById('pkg_count').value)||0;
+      if(want<=0){showErr('Enter count ≥ 1 for '+packLabel(packs[0])+'.');return;}
+      packs[0].count=want; placed=Math.min(want, grid.count);
+    }
+    const region={ pack:packs[0], pkgObj:p0, x:0,y:0,z:0,
+      grid:{perL:grid.perL,perW:grid.perW,perH:grid.perH}, count:placed };
+    totalCount=placed; totalVol=placed*(p0.vol||0); totalWeight=placed*(p0.weight||0);
+    totalRequested=(mode==='custom')?want:undefined;
+    summary=[{pack:packs[0], pkgObj:p0, placed, want:(mode==='custom'?want:undefined)}];
+    viz={ regions:[region], summary };
+  } else {
+    // MULTI-PACK: guillotine packer over INCLUDED packs only.
+    const items=[];
+    for(let i=0;i<packs.length;i++){
+      if(packs[i].excluded) continue;
+      let want;
+      if(mode==='custom'){
+        if(i===0){ want=parseInt(document.getElementById('pkg_count').value)||0; packs[0].count=want; }
+        else want=parseInt(packs[i].count)||0;
+      }
+      items.push({ idx:i, pack:packs[i], pkgObj:pkgObjs[i], want:(mode==='custom'?want:Infinity) });
+    }
+    if(items.length===0){ showErr('Include at least one package.');return; }
+    if(mode==='custom'){
+      const inc0=items.find(it=>it.idx===0);
+      if(inc0 && inc0.want<=0){ showErr('Enter count ≥ 1 for '+packLabel(packs[0])+'.');return; }
+    }
+    const r=packBins(c, items, mode);
+    if(r.totalCount===0){ showErr('Packages do not fit with these dimensions.');return; }
+    totalCount=r.totalCount; totalVol=r.totalVol; totalWeight=r.totalWeight; totalRequested=r.totalRequested;
+    summary=r.summary; viz={ regions:r.regions, summary };
   }
 
   saveState();
 
   // Comparison table: only meaningful for single-pack flow (primary shape).
-  if(packs.length===1){
+  if(packs.length===1 && !packs[0].excluded){
     const p=getPkgDims();
     const pkgWeight=parseFloat(document.getElementById('p_weight').value)||0;
     buildComparisonTable(p, pkgWeight);
   }
 
-  renderResult({ mode, container:c, placements, totalCount, totalVol, totalWeight, totalRequested, chosenAxis, autoReport });
-  lastViz=[c, placements];
+  renderResult({ mode, container:c, summary, totalCount, totalVol, totalWeight, totalRequested });
+  lastViz=[c, viz];
   draw3D(...lastViz);
   if(isMobile())switchMobileTab('3d');
   if(typeof isDemo !== 'undefined' && isDemo) demoBump();
@@ -1989,49 +1974,50 @@ function modeLabel(m){
 function renderResult(r){
   const rb=document.getElementById('rbar');
   if(!rb) return;
-  const { mode, container, placements } = r;
-  if(!placements){ rb.innerHTML=''; return; }
+  const { mode, container, summary } = r;
+  if(!summary){ rb.innerHTML=''; return; }
   const containerVol = container.l*container.w*container.h;
   const utilPct = containerVol>0 ? (r.totalVol/containerVol*100) : 0;
+  const freeVol = Math.max(0, containerVol - r.totalVol);
   const payloadKg = container.payload || 0;
   const weightOK = payloadKg<=0 || r.totalWeight<=payloadKg;
   const utilBarColor = utilPct>=90?'#3fb950':utilPct>=60?'#f0883e':'#58a6ff';
   const lines=[];
-  const axisLabel = r.chosenAxis ? r.chosenAxis : splitAxis;
-  lines.push(`Mode: ${modeLabel(mode)}  |  Fill axis: ${axisLabel}${r.autoReport || ''}`);
-  for(const pl of placements){
-    const p=pl.pack, g=pl.grid, s=pl.slab;
+  lines.push(`Mode: ${modeLabel(mode)}`);
+  // smallest included pack (for "could still add" estimate)
+  let smallest=null;
+  for(const s of summary){ const uv=s.pkgObj && s.pkgObj.vol||0; if(uv>0 && (smallest===null||uv<smallest.uv)) smallest={uv, label:packLabel(s.pack)}; }
+  for(const s of summary){
+    const p=s.pack;
     const swatch=`<span style="display:inline-block;width:10px;height:10px;background:${p.color};margin-right:6px;vertical-align:middle;border-radius:2px"></span>`;
-    const grBlock=`Grid ${g.perL}×${g.perW}×${g.perH} · Block ${Math.round(s.l)}×${Math.round(s.w)}×${Math.round(s.h)} cm`;
     if(mode==='custom'){
-      const want=pl.inputCount||0, placed=pl.placedCount, room=Math.max(0, pl.capInRemain-placed);
+      const want=s.want||0, placed=s.placed;
       let status;
-      if(placed>=want && want>0){
-        status = room>0 ? `<span style="color:#f0883e">✅ all fit · ${fmtN(room)} more would still fit here</span>`
-                        : `<span style="color:#3fb950">✅ all fit (snug)</span>`;
-      } else {
-        status = `<span style="color:#f85149">⚠ ${fmtN(placed)} placed of ${fmtN(want)} — short ${fmtN(want-placed)}</span>`;
-      }
-      lines.push(`${swatch}${packLabel(p)} (${p.shape}): want <b>${fmtN(want)}</b> / placed <b>${fmtN(placed)}</b> · ${status} · ${grBlock}`);
+      if(placed>=want && want>0) status=`<span style="color:#3fb950">✅ all ${fmtN(want)} fit</span>`;
+      else if(placed>0)          status=`<span style="color:#f85149">⚠ ${fmtN(placed)} of ${fmtN(want)} — short ${fmtN(want-placed)}</span>`;
+      else                       status=`<span style="color:#f85149">🚫 0 of ${fmtN(want)} — no room left</span>`;
+      lines.push(`${swatch}${packLabel(p)} (${p.shape}): <b>${fmtN(placed)}</b> / ${fmtN(want)} · ${status}`);
     } else {
-      lines.push(`${swatch}${packLabel(p)} (${p.shape}): <b>${fmtN(pl.placedCount)}</b> units · ${grBlock}`);
+      lines.push(`${swatch}${packLabel(p)} (${p.shape}): <b>${fmtN(s.placed)}</b> units`);
     }
   }
   const wtStr = r.totalWeight>0
     ? `${fmtN(r.totalWeight)} kg ${weightOK?'<span style="color:#3fb950">✓</span>':'<span style="color:#f85149">⚠ over payload</span>'}`
     : '—';
   const bar = `<span style="display:inline-block;width:90px;height:8px;background:#21262d;border-radius:4px;vertical-align:middle;margin:0 4px;overflow:hidden"><span style="display:block;height:100%;width:${Math.min(utilPct,100).toFixed(1)}%;background:${utilBarColor}"></span></span>`;
-  // Set-level overload (custom): the WHOLE set, not any single pack's zone.
   let setNote='';
   if(mode==='custom'){
     const shortBy = (r.totalRequested||0) - r.totalCount;
     setNote = shortBy>0
-      ? `  ·  <span style="color:#f85149">⚠ Set overload — container holds ${fmtN(r.totalCount)} of ${fmtN(r.totalRequested)} requested (short ${fmtN(shortBy)})</span>`
+      ? `  ·  <span style="color:#f85149">⚠ Over capacity — holds ${fmtN(r.totalCount)} of ${fmtN(r.totalRequested)} (short ${fmtN(shortBy)})</span>`
       : `  ·  <span style="color:#3fb950">✓ All ${fmtN(r.totalRequested)} requested fit</span>`;
   }
   lines.push(
     `<b>Total loaded: ${fmtN(r.totalCount)} packages</b>  ·  Vol util: <b>${utilPct.toFixed(1)}%</b>${bar}·  Weight: ${wtStr}${setNote}`
   );
+  const couldAdd = (smallest && smallest.uv>0) ? Math.floor(freeVol/smallest.uv) : 0;
+  lines.push(`Free space: <b>${(freeVol/1e6).toFixed(2)} m³</b> of ${(containerVol/1e6).toFixed(2)} m³`
+    + (couldAdd>0 ? ` — room for ≈<b>${fmtN(couldAdd)}</b> more of ${smallest.label} (smallest type)` : ''));
   rb.innerHTML=lines.map(l=>`<div class="info-line">${l}</div>`).join('');
 }
 
@@ -2315,7 +2301,9 @@ function drawPkg3d(ctx, type, wx, wy, wz, p, baseColor, sc, ox, oy, isPrimary){
 // View selector: choose how the packed result is rendered.
 function setViewMode(m){ viewMode=m; const s=document.getElementById('viewSel'); if(s)s.value=m; if(lastViz)draw3D(...lastViz); else drawEmpty3D(); saveState(); }
 
-function draw3D(c, placements){
+function draw3D(c, viz){
+  const regions = (viz && viz.regions) ? viz.regions : [];
+  const summary = (viz && viz.summary) ? viz.summary : [];
   const canvas=document.getElementById('viz3d');
   const wrap=document.getElementById('canvasWrap');
   const W=wrap.offsetWidth||800,H=wrap.offsetHeight||500;
@@ -2328,49 +2316,40 @@ function draw3D(c, placements){
 
   // Top-down 2D floor map is a flat projection — fully separate path.
   if(viewMode==='top2d'){
-    const st=drawTop2D(ctx,c,placements,W,H,MAX);
+    const st=drawTop2D(ctx,c,regions,W,H,MAX);
     drawDemoWatermark(ctx,W,H);
-    draw3DFooter(ctx,placements,az,W,H,st.drawn,st.requested,MAX);
-    draw3DLegend(placements);
+    draw3DFooter(ctx,az,W,H,st.drawn,st.requested,MAX);
+    draw3DLegend(summary);
     return;
   }
 
   const st = (viewMode==='layered')
-    ? drawLayered3D(ctx,c,placements,sc,ox,oy,az,MAX)
-    : drawPacked3D(ctx,c,placements,sc,ox,oy,az,MAX, viewMode==='exploded');
+    ? drawLayered3D(ctx,c,summary,sc,ox,oy,az,MAX)
+    : drawPacked3D(ctx,c,regions,sc,ox,oy,az,MAX, viewMode==='exploded');
 
-  // Unused-space hint (compact only — exploded/layered intentionally spread out).
-  if(viewMode==='compact' && placements.length>0){
-    const zr0 = placements[0];
-    drawRemSpace(ctx, zr0.grid.perL, zr0.grid.perW, zr0.grid.perH, c, zr0.pkgObj, sc, ox, oy, null);
-  }
   drawWire(ctx,c.l,c.w,c.h,sc,ox,oy);
   drawDoor(ctx,c.l,c.w,c.h,sc,ox,oy);
   drawAxisArrows(ctx,c.l,c.w,c.h,sc,ox,oy);
   drawDemoWatermark(ctx,W,H);
-  draw3DFooter(ctx,placements,az,W,H,st.drawn,st.requested,MAX);
-  draw3DLegend(placements);
+  draw3DFooter(ctx,az,W,H,st.drawn,st.requested,MAX);
+  draw3DLegend(summary);
 }
 
-// Compact (packer truth) + Exploded (slabs pushed apart along the fill axis).
-function drawPacked3D(ctx,c,placements,sc,ox,oy,az,MAX,exploded){
+// Compact (packer truth) + Exploded (each pack-type pulled apart along L).
+function drawPacked3D(ctx,c,regions,sc,ox,oy,az,MAX,exploded){
   const cosAz=Math.cos(az),sinAz=Math.sin(az);
   let drawnTotal=0,requestedTotal=0;
-  const axis = placements[0] ? placements[0].fillAxis : 'L';
-  const fullAxis = axis==='L'?c.l : axis==='W'?c.w : c.h;
-  const expStep = exploded ? fullAxis*0.14 : 0;
-  for(let zi=0; zi<placements.length; zi++){
-    const zr=placements[zi];
-    const { grid, pkgObj, slab, pack } = zr;
+  const expStep = exploded ? c.l*0.06 : 0;
+  for(const rg of regions){
+    const { grid, pkgObj, pack, count } = rg;
     if(!pkgObj) continue;
     const color = pack.color || pkgObj.color || '#3fb950';
-    const isPrimary = (zi===0);
+    const isPrimary = (pack.id===1);
     const gap = pkgObj.gap || 0;
     const stepL=pkgObj.footL+gap, stepW=pkgObj.footW+gap, stepH=pkgObj.stackH+gap;
-    const drawLimit = (zr.placedCount!==undefined) ? zr.placedCount : grid.count;
+    const drawLimit = (count!==undefined) ? count : grid.perL*grid.perW*grid.perH;
     requestedTotal += drawLimit;
-    let eL=0,eW=0,eH=0;
-    if(axis==='L')eL=zi*expStep; else if(axis==='W')eW=zi*expStep; else eH=zi*expStep;
+    const eL = exploded ? (pack.id-1)*expStep : 0;
     const xR=cosAz>=0?mkR(0,grid.perL-1,1):mkR(grid.perL-1,0,-1);
     const yR=sinAz>=0?mkR(0,grid.perW-1,1):mkR(grid.perW-1,0,-1);
     const zR=mkR(0,grid.perH-1,1);
@@ -2379,9 +2358,9 @@ function drawPacked3D(ctx,c,placements,sc,ox,oy,az,MAX,exploded){
     for(const iz of zR)for(const iy of yR)for(const ix of xR){
       if(placed>=drawLimit) break outer;
       if(drawnTotal>=MAX) break outer;
-      const wx=slab.offL+eL + ix*stepL;
-      const wy=slab.offW+eW + iy*stepW;
-      const wz=slab.offH+eH + iz*stepH;
+      const wx=rg.x+eL + ix*stepL;
+      const wy=rg.y + iy*stepW;
+      const wz=rg.z + iz*stepH;
       drawPkg3d(ctx, pkgObj.type, wx, wy, wz, pkgObj, color, sc, ox, oy, isPrimary);
       placed++; drawnTotal++;
     }
@@ -2390,19 +2369,19 @@ function drawPacked3D(ctx,c,placements,sc,ox,oy,az,MAX,exploded){
   return { drawn:drawnTotal, requested:requestedTotal };
 }
 
-// Layered: each pack type stacked as its own full-floor layer set (illustrative).
-function drawLayered3D(ctx,c,placements,sc,ox,oy,az,MAX){
+// Layered: each pack type as its own full-floor layer set (illustrative; from summary).
+function drawLayered3D(ctx,c,summary,sc,ox,oy,az,MAX){
   const cosAz=Math.cos(az),sinAz=Math.sin(az);
   let drawnTotal=0,requestedTotal=0,hCursor=0;
-  for(let zi=0; zi<placements.length; zi++){
-    const zr=placements[zi];
-    const { pkgObj, pack } = zr;
+  for(const s of summary){
+    const pkgObj=s.pkgObj, pack=s.pack;
     if(!pkgObj || !pkgObj.footL || !pkgObj.stackH) continue;
     const color = pack.color || pkgObj.color || '#3fb950';
-    const isPrimary = (zi===0);
+    const isPrimary = (pack.id===1);
     const gap = pkgObj.gap || 0;
     const stepL=pkgObj.footL+gap, stepW=pkgObj.footW+gap, stepH=pkgObj.stackH+gap;
-    const drawLimit = (zr.placedCount!==undefined) ? zr.placedCount : zr.grid.count;
+    const drawLimit = s.placed||0;
+    if(drawLimit<=0) continue;
     requestedTotal += drawLimit;
     const perL=Math.max(1,Math.floor((c.l+gap)/stepL));
     const perW=Math.max(1,Math.floor((c.w+gap)/stepW));
@@ -2425,25 +2404,24 @@ function drawLayered3D(ctx,c,placements,sc,ox,oy,az,MAX){
   return { drawn:drawnTotal, requested:requestedTotal };
 }
 
-// Top-down 2D floor map: bottom-layer footprints, color-coded per pack.
-function drawTop2D(ctx,c,placements,W,H,MAX){
+// Top-down 2D floor map: bottom-layer footprints per region, color-coded.
+function drawTop2D(ctx,c,regions,W,H,MAX){
   const margin=46;
   const s=Math.min((W-2*margin)/c.l,(H-2*margin)/c.w);
   const x0=(W-c.l*s)/2, y0=(H-c.w*s)/2;
   let drawn=0, requested=0;
-  for(let zi=0; zi<placements.length; zi++){
-    const zr=placements[zi];
-    const { pkgObj, slab, grid } = zr;
+  for(const rg of regions){
+    const { pkgObj, grid, count } = rg;
     if(!pkgObj || !pkgObj.footL) continue;
     const gap=pkgObj.gap||0, stepL=pkgObj.footL+gap, stepW=pkgObj.footW+gap;
     const perL=grid.perL||0, perW=grid.perW||0;
-    const bottom=Math.min(zr.placedCount!==undefined?zr.placedCount:grid.count, perL*perW);
+    const bottom=Math.min(count!==undefined?count:perL*perW*grid.perH, perL*perW);
     requested += bottom;
     let n=0;
-    ctx.fillStyle=zr.pack.color||'#3fb950'; ctx.globalAlpha=0.85;
+    ctx.fillStyle=rg.pack.color||'#3fb950'; ctx.globalAlpha=0.8;
     for(let iy=0; iy<perW && n<bottom && drawn<MAX; iy++)
       for(let ix=0; ix<perL && n<bottom && drawn<MAX; ix++){
-        const rx=x0+(slab.offL+ix*stepL)*s, ry=y0+(slab.offW+iy*stepW)*s;
+        const rx=x0+(rg.x+ix*stepL)*s, ry=y0+(rg.y+iy*stepW)*s;
         ctx.fillRect(rx+0.5, ry+0.5, Math.max(1,pkgObj.footL*s-1), Math.max(1,pkgObj.footW*s-1));
         n++; drawn++;
       }
@@ -2463,22 +2441,21 @@ function drawDemoWatermark(ctx,W,H){
   ctx.globalAlpha=0.06;ctx.fillText('DEMO',0,72);ctx.restore();
 }
 
-function draw3DFooter(ctx,placements,az,W,H,drawnTotal,requestedTotal,MAX){
+function draw3DFooter(ctx,az,W,H,drawnTotal,requestedTotal,MAX){
   ctx.fillStyle='#6e7681';ctx.font='10px Segoe UI';ctx.textAlign='left';
-  const g0 = placements[0] ? placements[0].grid : {perL:0,perW:0,perH:0};
-  ctx.fillText(`View: ${viewMode} | Grid ${g0.perL}×${g0.perW}×${g0.perH} | Az ${Math.round(az*180/Math.PI)}° | Drag to rotate`,8,H-8);
+  ctx.fillText(`View: ${viewMode} | Az ${Math.round(az*180/Math.PI)}° | Drag to rotate`,8,H-8);
   if(drawnTotal>=MAX){
     ctx.fillStyle='#f0883e';ctx.textAlign='center';
     ctx.fillText(`Large dataset — showing ${MAX.toLocaleString()} of ${requestedTotal.toLocaleString()} packages`,W/2,H-8);
   }
 }
 
-function draw3DLegend(placements){
+function draw3DLegend(summary){
   const leg=document.getElementById('legend3d');
   if(!leg) return;
   leg.style.display='flex';
-  const packChips = placements.map(zr =>
-    `<div class="leg-item"><div class="leg-dot" style="background:${zr.pack.color}"></div>${packLabel(zr.pack)} (${zr.pack.shape}): ${fmtN(zr.placedCount!==undefined?zr.placedCount:zr.grid.count)}</div>`
+  const packChips = summary.map(s =>
+    `<div class="leg-item"><div class="leg-dot" style="background:${s.pack.color}"></div>${packLabel(s.pack)} (${s.pack.shape}): ${fmtN(s.placed||0)}</div>`
   ).join('');
   leg.innerHTML = packChips +
     `<div class="leg-item"><div class="leg-dot" style="background:rgba(56,139,253,0.3);border:1px solid #388bfd"></div>Unused space</div>`;
