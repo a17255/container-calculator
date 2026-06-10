@@ -1775,44 +1775,97 @@ function buildPkgObj(i){
 // single-axis slab pass, and overload becomes a true whole-set condition.
 // items: [{idx, pack, pkgObj, want}] (want = Infinity for auto mode).
 // Returns regions[] (grid clusters with x/y/z origin), per-pack summary[], totals.
+// All distinct axis-aligned orientations of a box-like pack, as {footL,footW,stackH}
+// clones (vol/gap/weight/color/type preserved). Box-like shapes rotate freely so the
+// packer can "check all dimensions" the way a human loader does; cylinder/sphere/wedge
+// keep their single orientation (axis-specific 3D draw / symmetric — rotating them
+// would mis-render).
+function orientationsOf(p){
+  const rotatable=(p.type==='rect'||p.type==='rectangle'||p.type==='square'||p.type==='bag');
+  const a=p.footL, b=p.footW, c=p.stackH;
+  const perms=rotatable
+    ? [[a,b,c],[a,c,b],[b,a,c],[b,c,a],[c,a,b],[c,b,a]]
+    : [[a,b,c]];
+  const seen=new Set(), out=[];
+  for(const v of perms){
+    const k=v[0]+'x'+v[1]+'x'+v[2]; if(seen.has(k)) continue; seen.add(k);
+    out.push({ ...p, footL:v[0], footW:v[1], stackH:v[2] });
+  }
+  return out;
+}
+
+// Rotation-aware best-fit packer. For every empty space (filled bottom-left-back first)
+// it tries EVERY remaining pack in EVERY orientation and places the one that fills the
+// most volume — so small packs claim leftover slivers (no type stranded at 0), big packs
+// stay dense and low, and nothing is abandoned while space remains. Free space is split
+// right/back/top after each block and pruned of fully-contained leftovers to curb
+// fragmentation. Overload (custom mode) stays a whole-set condition (Σplaced < Σwant).
 function packBins(c, items, mode){
-  const free=[{x:0,y:0,z:0,l:c.l,w:c.w,h:c.h}];
-  const regions=[]; const placedBy={};
+  let free=[{x:0,y:0,z:0,l:c.l,w:c.w,h:c.h}];
+  const regions=[]; const placedBy={}; const rem={};
   let totalCount=0, totalVol=0, totalWeight=0, totalRequested=0;
-  for(const it of items){ placedBy[it.idx]=0; if(mode==='custom') totalRequested += (it.want||0); }
-  // big-box-first dramatically improves fill (validated on real configs).
-  const order=[...items].sort((a,b)=>
-    (b.pkgObj.footL*b.pkgObj.footW*b.pkgObj.stackH) - (a.pkgObj.footL*a.pkgObj.footW*a.pkgObj.stackH));
-  for(const it of order){
-    const p=it.pkgObj;
-    if(!p || !p.footL || !p.footW || !p.stackH) continue;
-    let rem = (mode==='custom') ? (it.want||0) : Infinity;
-    if(mode==='custom' && rem<=0) continue;
-    let guard=0;
-    while(rem>0 && guard++<200000){
-      // bottom-left-back free space that fits one unit
-      let bi=-1, bk=Infinity;
-      for(let i=0;i<free.length;i++){ const f=free[i];
-        if(f.l>=p.footL && f.w>=p.footW && f.h>=p.stackH){
-          const k=f.z*1e8 + f.y*1e4 + f.x; if(k<bk){ bk=k; bi=i; } } }
-      if(bi<0) break;                                   // pack no longer fits anywhere
-      const f=free[bi];
-      const nl=Math.floor(f.l/p.footL), nw=Math.floor(f.w/p.footW), nh=Math.floor(f.h/p.stackH);
-      const cap=nl*nw*nh, take=Math.min(rem, cap);
-      const layerCap=nl*nw, layersUsed=Math.ceil(take/layerCap);  // reserve only used H layers
-      const ol=nl*p.footL, ow=nw*p.footW, oh=layersUsed*p.stackH;
-      regions.push({ pack:it.pack, pkgObj:p, x:f.x, y:f.y, z:f.z,
+  for(const it of items){ placedBy[it.idx]=0; rem[it.idx]=(mode==='custom')?(it.want||0):Infinity;
+    if(mode==='custom') totalRequested += (it.want||0); }
+  function fitsBest(f){
+    let best=null;
+    for(const it of items){
+      if(!(rem[it.idx]>0)) continue;
+      const p=it.pkgObj; if(!p||!p.footL||!p.footW||!p.stackH) continue;
+      const gap=p.gap||0;
+      for(const ori of orientationsOf(p)){
+        if(f.l<ori.footL||f.w<ori.footW||f.h<ori.stackH) continue;
+        const nl=Math.floor((f.l+gap)/(ori.footL+gap));
+        const nw=Math.floor((f.w+gap)/(ori.footW+gap));
+        const nh=Math.floor((f.h+gap)/(ori.stackH+gap));
+        const cap=nl*nw*nh; if(cap<1) continue;
+        const take=Math.min(rem[it.idx],cap);
+        const score=take*(p.vol||0), foot=ori.footL*ori.footW;
+        if(!best||score>best.score||(score===best.score&&(take>best.take||(take===best.take&&foot>best.foot))))
+          best={ it, ori, gap, nl, nw, take, score, foot };
+      }
+    }
+    return best;
+  }
+  function prune(){   // keep only maximal free boxes (drop any fully contained in another)
+    free=free.filter((a,i)=> !free.some((b,j)=> i!==j &&
+      b.x<=a.x&&a.x+a.l<=b.x+b.l && b.y<=a.y&&a.y+a.w<=b.y+b.w && b.z<=a.z&&a.z+a.h<=b.z+b.h &&
+      (b.l*b.w*b.h)>=(a.l*a.w*a.h) &&
+      !(b.x===a.x&&b.y===a.y&&b.z===a.z&&b.l===a.l&&b.w===a.w&&b.h===a.h&&i>j) ));
+  }
+  const intersect=(F,B)=> F.x<B.x+B.l&&B.x<F.x+F.l && F.y<B.y+B.w&&B.y<F.y+F.w && F.z<B.z+B.h&&B.z<F.z+F.h;
+  let guard=0;
+  while(guard++ < 500000){
+    free.sort((A,B)=> A.z-B.z || A.y-B.y || A.x-B.x);   // fill bottom-left-back first
+    let placed=false;
+    for(let i=0;i<free.length;i++){
+      const f=free[i];
+      const best=fitsBest(f);
+      if(!best) continue;                               // this box fits nothing now — skip (boxes overlap; never delete)
+      const it=best.it, ori=best.ori, gap=best.gap, nl=best.nl, nw=best.nw, take=best.take;
+      const layersUsed=Math.ceil(take/(nl*nw));
+      const ol=nl*(ori.footL+gap)-gap, ow=nw*(ori.footW+gap)-gap, oh=layersUsed*(ori.stackH+gap)-gap;
+      regions.push({ pack:it.pack, pkgObj:{...ori}, x:f.x, y:f.y, z:f.z,
         grid:{perL:nl, perW:nw, perH:layersUsed}, count:take });
       placedBy[it.idx]+=take; totalCount+=take;
-      totalVol+=take*(p.vol||0); totalWeight+=take*(p.weight||0);
-      rem-=take;
-      free.splice(bi,1);
-      const R={x:f.x+ol, y:f.y, z:f.z, l:f.l-ol, w:f.w,    h:f.h};   // right of block
-      const B={x:f.x,    y:f.y+ow, z:f.z, l:ol,    w:f.w-ow, h:f.h};  // behind block
-      const T={x:f.x,    y:f.y, z:f.z+oh, l:ol,    w:ow,    h:f.h-oh}; // above block
-      for(const s of [R,B,T]) if(s.l>0 && s.w>0 && s.h>0) free.push(s);
-      if(take<cap) break;                               // partial last block → pack done
+      totalVol+=take*(ori.vol||0); totalWeight+=take*(ori.weight||0);
+      rem[it.idx]-=take;
+      const B={x:f.x, y:f.y, z:f.z, l:ol, w:ow, h:oh};  // occupied block (placed at f's corner)
+      // MaxRects: replace every free box overlapping B with its maximal remainder slabs
+      const next=[];
+      for(const F of free){
+        if(!intersect(F,B)){ next.push(F); continue; }
+        if(F.x<B.x)         next.push({x:F.x, y:F.y, z:F.z, l:B.x-F.x, w:F.w, h:F.h});
+        if(F.x+F.l>B.x+B.l) next.push({x:B.x+B.l, y:F.y, z:F.z, l:F.x+F.l-(B.x+B.l), w:F.w, h:F.h});
+        if(F.y<B.y)         next.push({x:F.x, y:F.y, z:F.z, l:F.l, w:B.y-F.y, h:F.h});
+        if(F.y+F.w>B.y+B.w) next.push({x:F.x, y:B.y+B.w, z:F.z, l:F.l, w:F.y+F.w-(B.y+B.w), h:F.h});
+        if(F.z<B.z)         next.push({x:F.x, y:F.y, z:F.z, l:F.l, w:F.w, h:B.z-F.z});
+        if(F.z+F.h>B.z+B.h) next.push({x:F.x, y:F.y, z:B.z+B.h, l:F.l, w:F.w, h:F.z+F.h-(B.z+B.h)});
+      }
+      free=next.filter(s=> s.l>0&&s.w>0&&s.h>0);
+      prune();
+      placed=true; break;
     }
+    if(!placed) break;                                  // nothing fits any remaining space
   }
   // per-pack summary in INPUT order (for display)
   const summary=items.map(it=>({ pack:it.pack, pkgObj:it.pkgObj,
@@ -2017,7 +2070,7 @@ function renderResult(r){
   );
   const couldAdd = (smallest && smallest.uv>0) ? Math.floor(freeVol/smallest.uv) : 0;
   lines.push(`Free space: <b>${(freeVol/1e6).toFixed(2)} m³</b> of ${(containerVol/1e6).toFixed(2)} m³`
-    + (couldAdd>0 ? ` — room for ≈<b>${fmtN(couldAdd)}</b> more of ${smallest.label} (smallest type)` : ''));
+    + (couldAdd>0 ? ` — volume alone could hold ≈<b>${fmtN(couldAdd)}</b> more ${smallest.label} (smallest type), geometry permitting` : ''));
   rb.innerHTML=lines.map(l=>`<div class="info-line">${l}</div>`).join('');
 }
 
